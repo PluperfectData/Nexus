@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.DuckDb</RootNamespace>
+    <AssemblyName>Nexus.DuckDb</AssemblyName>
+    <Description>A Nexus destination that writes streams into a DuckDB database file.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DuckDB.NET.Data.Full" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

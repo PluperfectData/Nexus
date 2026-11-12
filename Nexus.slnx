@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Nexus.Abstractions/Nexus.Abstractions.csproj" />
+    <Project Path="src/Nexus.DuckDb/Nexus.DuckDb.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nexus.Abstractions.Tests/Nexus.Abstractions.Tests.csproj" />
+    <Project Path="tests/Nexus.DuckDb.Tests/Nexus.DuckDb.Tests.csproj" />
   </Folder>
 </Solution>

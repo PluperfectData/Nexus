@@ -7,11 +7,13 @@ them. A source runs standalone with records in memory, or piped into a destinati
 
 | Path | Contents |
 |---|---|
-| `src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync` |
+| `src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync`, `Tap` |
+| `src/Nexus.DuckDb` | `DuckDbDestination` |
 | `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
+| `tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
 
-Status: contracts only. Planned: MySQL, Postgres, SQL Server, CSV, Google Sheets, Stripe, and Schwab
-sources; a DuckDB destination.
+Status: contracts and the DuckDB destination. Planned sources: MySQL, Postgres, SQL Server, CSV, Google
+Sheets, Stripe, and Schwab.
 
 ## Contract
 
@@ -81,6 +83,46 @@ secret values.
 `Retry-After` is honored. A value above `MaxDelay` throws at once with `RetryAfter` set. The final failure
 throws `RateLimited` for 429 and `Transient` otherwise.
 
+## DuckDB destination
+
+`DuckDbDestination`, id `duckdb`. Setting `path`: the database file, created if absent.
+
+| Write mode | Behavior |
+|---|---|
+| `Append` | Inserts every row. |
+| `Upsert` | Deletes target rows whose primary key is staged, then inserts the last staged row per key. Requires `PrimaryKey`. |
+| `Overwrite` | Loads `__nexus_overwrite_<stream>`, then replaces `<stream>` in one transaction when the write ends. The stream's checkpoints are yielded after the replace. |
+
+- One table per stream, named for the stream. A column the source adds is added with
+  `ALTER TABLE ADD COLUMN`; none are dropped. No `NOT NULL` or key constraints.
+- Rows are appended to a temp stage table per stream and merged into the target by column name at each
+  checkpoint, in one transaction. A failed write rolls back to the last checkpoint.
+- Tables prefixed `__nexus_` are internal.
+
+| Failure | `ConnectorErrorKind` |
+|---|---|
+| Open: another process holds the file | `Transient` |
+| Open: any other failure | `ConfigInvalid` |
+| `DuckDBErrorType` `Conversion`, `OutOfRange`, `Decimal`, `MismatchType`, `Constraint`, `InvalidInput`, `ObjectSize`; a value overflowing its column | `SourceError` |
+| `DuckDBErrorType` `Transaction`, `OutOfMemory`, `Io`, `Interrupt` | `Transient` |
+| `DuckDBErrorType` `Permission` | `ConfigInvalid` |
+| Any other `DuckDBErrorType` (`Binder`, `Catalog`, `Parser`, `Internal`, ...) | Not classified; `DuckDBException` propagates |
+
+The original exception is `InnerException`.
+
+| `ColumnType` | DuckDB type |
+|---|---|
+| `String` | `VARCHAR` |
+| `Int64` | `BIGINT` |
+| `Decimal` | `DECIMAL(p, s)`; precision 0 becomes 38 |
+| `Float64` | `DOUBLE` |
+| `Boolean` | `BOOLEAN` |
+| `Date` | `DATE` |
+| `Timestamp` | `TIMESTAMPTZ` |
+| `Time` | `TIME` |
+| `Json` | `JSON` |
+| `Binary` | `BLOB` |
+
 ## Usage
 
 Standalone, in memory:
@@ -95,16 +137,20 @@ MemoryTable orders = result.Tables["orders"];
 // orders.Rows, orders.State, result.RefreshedCredentials
 ```
 
-Source to destination, where `stateStore` is the host's:
+Source to destination, where `tokenStore` and `stateStore` are the host's:
 
 ```csharp
-var messages = source.ReadAsync(sourceConfig, readRequest, ct);
+var messages = source.ReadAsync(sourceConfig, readRequest, ct)
+    .Tap((tokens, cancellation) => tokenStore.SaveAsync(tokens, cancellation), logger, ct);
 
 await foreach (var checkpoint in destination.WriteAsync(destinationConfig, writeRequest, messages, ct))
 {
     await stateStore.SaveAsync(checkpoint, ct);
 }
 ```
+
+A destination consumes `CredentialsRefreshed` and `LogMessage` without acting on them. `Tap` hands each to
+the host before passing it on; without it, refreshed tokens are lost.
 
 ## Build
 

@@ -15,7 +15,7 @@ public sealed record MemoryTable(StreamSpec Stream, IReadOnlyList<object?[]> Row
 public sealed record MemoryReadResult(IReadOnlyDictionary<string, MemoryTable> Tables, OAuthTokens? RefreshedCredentials);
 
 /// <summary>Helpers for using a source without a destination.</summary>
-public static partial class SourceConnectorExtensions
+public static class SourceConnectorExtensions
 {
     /// <summary>Reads every selected stream into memory.</summary>
     public static async Task<MemoryReadResult> ReadToMemoryAsync(
@@ -56,7 +56,7 @@ public static partial class SourceConnectorExtensions
                     break;
 
                 case LogMessage log when logger is not null:
-                    LogConnectorMessage(logger, log.Level, log.Text);
+                    ConnectorLog.Write(logger, log.Level, log.Text);
                     break;
             }
         }
@@ -70,9 +70,6 @@ public static partial class SourceConnectorExtensions
                 ? table
                 : throw new InvalidOperationException($"Stream '{stream}' sent data before its schema.");
     }
-
-    [LoggerMessage(Message = "{Text}")]
-    private static partial void LogConnectorMessage(ILogger logger, LogLevel level, string text);
 
     private sealed class TableBuilder(StreamSpec stream)
     {
