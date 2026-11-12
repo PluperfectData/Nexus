@@ -16,6 +16,7 @@ records in memory, or piped into a destination.
 | `src/Nexus.Postgres` | `PostgresSource` |
 | `src/Nexus.SqlServer` | `SqlServerSource` |
 | `src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
+| `tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
 | `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
 | `tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
 | `tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
@@ -335,6 +336,35 @@ The id comes from the `Location` header, and is null when Schwab sends none.
 | A read that runs out of retries, a response cut off, an action that failed DNS or TLS and so was never sent | `Transient` |
 | An action sent with no answer: a 5xx, a timeout, a dropped connection | `OutcomeUnknown` |
 | Any other 4xx, with Schwab's message; a missing or unreadable value | `SourceError` |
+
+### Sign-in tool
+
+`tools/Nexus.Schwab.SignIn` signs in to Schwab in the browser and saves the tokens to its user secrets, id
+`Nexus.Schwab.SignIn`. It is not packed.
+
+| User secret | Set by | Holds |
+|---|---|---|
+| `Schwab:AppKey` | You | The app key from Schwab's developer portal |
+| `Schwab:AppSecret` | You | The app secret |
+| `Schwab:CallbackUrl` | You | The app's callback URL, exactly as registered: `https://127.0.0.1`, with an optional port |
+| `Schwab:AccessToken` | The tool | |
+| `Schwab:RefreshToken` | The tool | |
+| `Schwab:ExpiresAt` | The tool | When the access token expires, ISO 8601 |
+| `Schwab:SignedInAt` | The tool | When the sign-in happened. Schwab ends it 7 days later. |
+
+```bash
+dotnet user-secrets set Schwab:AppKey "<app key>" --id Nexus.Schwab.SignIn
+```
+
+```bash
+dotnet run --project tools/Nexus.Schwab.SignIn
+```
+
+- The tool listens on 127.0.0.1 at the callback URL's port, with a self-signed certificate made at run time,
+  and opens Schwab's sign-in page. The browser warns about the certificate; continue past it.
+- It checks the returned `state`, exchanges the code with HTTP Basic auth, and writes the four token keys.
+  Other keys in the file are kept, and the file is replaced in one move.
+- It waits 5 minutes for the redirect, and never prints a token.
 
 ## Usage
 

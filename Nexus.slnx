@@ -9,6 +9,9 @@
     <Project Path="src/Nexus.Sql/Nexus.Sql.csproj" />
     <Project Path="src/Nexus.SqlServer/Nexus.SqlServer.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Nexus.Schwab.SignIn/Nexus.Schwab.SignIn.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nexus.Abstractions.Tests/Nexus.Abstractions.Tests.csproj" />
     <Project Path="tests/Nexus.Csv.Tests/Nexus.Csv.Tests.csproj" />
