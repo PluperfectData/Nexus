@@ -17,6 +17,9 @@ public enum ConnectorErrorKind
 
     /// <summary>The source returned something the connector cannot use.</summary>
     SourceError,
+
+    /// <summary>An action was sent and may have taken effect. The caller checks before sending it again.</summary>
+    OutcomeUnknown,
 }
 
 /// <summary>A connector failure, with a message safe to show the user.</summary>

@@ -7,16 +7,32 @@ namespace Nexus;
 /// <param name="Values">Setting values keyed by <see cref="SettingField.Name"/>, secrets included.</param>
 /// <param name="Tokens">The current OAuth tokens, for an OAuth connector.</param>
 /// <param name="Files">Uploaded files keyed by the <see cref="SettingField.Name"/> of a <see cref="SettingKind.File"/> field.</param>
+/// <param name="Client">The host's OAuth app, for an OAuth connector that refreshes its own tokens.</param>
 public sealed record ConnectorConfig(
     IReadOnlyDictionary<string, string?> Values,
     OAuthTokens? Tokens = null,
-    IReadOnlyDictionary<string, ConnectorFile>? Files = null)
+    IReadOnlyDictionary<string, ConnectorFile>? Files = null,
+    OAuthClient? Client = null)
 {
     // Prints setting and file names only, so secrets stay out of logs.
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append("Values = [").AppendJoin(", ", Values.Keys).Append("], Tokens = ").Append(Tokens)
-            .Append(", Files = [").AppendJoin(", ", Files?.Keys ?? Enumerable.Empty<string>()).Append(']');
+            .Append(", Files = [").AppendJoin(", ", Files?.Keys ?? Enumerable.Empty<string>()).Append("], Client = ")
+            .Append(Client);
+        return true;
+    }
+}
+
+/// <summary>The OAuth app the host registered with a service, such as a Schwab app key and secret.</summary>
+/// <param name="ClientId">The app's client id.</param>
+/// <param name="ClientSecret">The app's client secret.</param>
+public sealed record OAuthClient(string ClientId, string ClientSecret)
+{
+    // Prints the client id only, so the secret stays out of logs.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append("ClientId = ").Append(ClientId);
         return true;
     }
 }

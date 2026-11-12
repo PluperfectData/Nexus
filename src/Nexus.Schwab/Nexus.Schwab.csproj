@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Schwab</RootNamespace>
+    <AssemblyName>Nexus.Schwab</AssemblyName>
+    <Description>A Nexus source and order actions for Charles Schwab brokerage accounts, through the Schwab Trader API.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
