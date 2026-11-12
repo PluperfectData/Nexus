@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Csv</RootNamespace>
+    <AssemblyName>Nexus.Csv</AssemblyName>
+    <Description>A Nexus source that reads an uploaded CSV file, with column types inferred from its values.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Sylvan.Data.Csv" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

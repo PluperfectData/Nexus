@@ -33,6 +33,9 @@ public enum SettingKind
 
     /// <summary>One value from <see cref="SettingField.Choices"/>.</summary>
     Choice,
+
+    /// <summary>A file the user uploads, passed in <see cref="ConnectorConfig.Files"/>.</summary>
+    File,
 }
 
 /// <summary>One setting the host asks the user for.</summary>

@@ -8,17 +8,28 @@ them. A source runs standalone with records in memory, or piped into a destinati
 | Path | Contents |
 |---|---|
 | `src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync`, `Tap` |
+| `src/Nexus.Csv` | `CsvSource` |
 | `src/Nexus.DuckDb` | `DuckDbDestination` |
 | `src/Nexus.Sql` | `SqlSettings` and the reader shared by the SQL sources |
 | `src/Nexus.MySql` | `MySqlSource` |
 | `src/Nexus.Postgres` | `PostgresSource` |
 | `src/Nexus.SqlServer` | `SqlServerSource` |
 | `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
+| `tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
 | `tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
 | `tests/Nexus.Sql.Tests` | NUnit and Shouldly, against real MySQL, PostgreSQL, and SQL Server servers |
 
-Status: contracts, the DuckDB destination, and the MySQL, PostgreSQL, and SQL Server sources. Planned
-sources: CSV, Google Sheets, Stripe, and Schwab.
+## Connector matrix
+
+| Connector | Project | Source | Destination |
+|---|---|---|---|
+| CSV | `Nexus.Csv` | ✓ | |
+| DuckDB | `Nexus.DuckDb` | | ✓ |
+| MySQL | `Nexus.MySql` | ✓ | |
+| PostgreSQL | `Nexus.Postgres` | ✓ | |
+| SQL Server | `Nexus.SqlServer` | ✓ | |
+
+Planned sources: Google Sheets, Stripe, and Schwab.
 
 ## Contract
 
@@ -72,9 +83,15 @@ sources: CSV, Google Sheets, Stripe, and Schwab.
 
 ### Secrets
 
-The library persists nothing. The host passes `ConnectorConfig` (settings, secrets, and OAuth tokens) on
-every call and stores state and tokens itself. `ToString()` on `ConnectorConfig` and `OAuthTokens` omits
-secret values.
+The library persists nothing. The host passes `ConnectorConfig` (settings, secrets, OAuth tokens, and
+uploaded files) on every call and stores state and tokens itself. `ToString()` on `ConnectorConfig` and
+`OAuthTokens` omits secret values.
+
+### Files
+
+A `SettingKind.File` field takes an upload. The host passes it in `ConnectorConfig.Files`, keyed by the
+field's name, as a `ConnectorFile`: the uploaded name, and `OpenAsync`, which opens a new stream at the start
+of the file on every call. The caller disposes each stream.
 
 ### HTTP
 
@@ -129,6 +146,44 @@ The original exception is `InnerException`.
 | `Time` | `TIME` |
 | `Json` | `JSON` |
 | `Binary` | `BLOB` |
+
+## CSV source
+
+`CsvSource`, id `csv`, auth `FileUpload`, on Sylvan.Data.Csv. One file, one stream.
+
+| Key | Kind | Notes |
+|---|---|---|
+| `file` | File | Required. Passed in `ConnectorConfig.Files`. |
+| `stream` | Text | Required. The stream's name. |
+| `header` | Boolean | Default `true`. Without a header, columns are `column1` to `columnN`. |
+| `delimiter` | Choice | `Comma` (default), `Semicolon`, `Tab`, `Pipe`. |
+
+- UTF-8, unless a byte order mark names another encoding.
+- Discovery reads the file once. A read passes over it twice: once to infer types, once to yield rows.
+- Full refresh only, in batches of 10,000 rows, then a `StateCheckpoint` of `{}`. No primary key, so write
+  with `Overwrite` or `Append`.
+- Empty fields are null in every column. A column with an empty field is nullable; a column of only empty
+  fields is a nullable `String`. Blank lines are skipped.
+
+Each column takes the first type every non-empty value fits. Formats are invariant: no thousands separators,
+no locale dates.
+
+| `ColumnType` | Accepted text |
+|---|---|
+| `Boolean` | `true`, `false`, in any case |
+| `Int64` | An optional sign and digits |
+| `Decimal(p, s)` | An optional sign, digits, and `.`, at most 28 digits per value. `p` and `s` are the widest seen; `p` is at most 38. |
+| `Float64` | A number with an exponent, or one too long for `Decimal` |
+| `Date` | `yyyy-MM-dd` |
+| `Timestamp` | `yyyy-MM-ddTHH:mm:ss[.fffffff]` and `Z` or `±hh:mm`. A space may replace the `T`. |
+| `DateTime` | `yyyy-MM-ddTHH:mm[:ss[.fffffff]]`, no zone. A space may replace the `T`. |
+| `String` | Anything else |
+
+| Failure | `ConnectorErrorKind` |
+|---|---|
+| No file, no `stream`, an invalid `header` or `delimiter`, an empty file, a missing file, an incremental read | `ConfigInvalid` |
+| Any other `IOException` reading the file | `Transient` |
+| A row with the wrong field count, malformed CSV, a repeated column name, a value that changed between passes | `SourceError` |
 
 ## SQL sources
 
@@ -250,19 +305,6 @@ dotnet user-secrets set ConnectionStrings:MySql "Server=localhost;User ID=...;Pa
 CI starts all three as service containers. Their password comes from the repository secret
 `CI_DATABASE_PASSWORD`: letters and digits, at least 8 characters, with upper case, lower case, and a digit.
 SQL Server rejects a weaker one.
-
-## Releases
-
-Push a `vMAJOR.MINOR.PATCH` tag. `ci.yml` builds and tests the tag, packs each packable project at that
-version, and publishes a GitHub release with the `.nupkg` files and generated notes.
-
-```bash
-git tag v0.1.0
-```
-
-```bash
-git push origin v0.1.0
-```
 
 ## License
 
