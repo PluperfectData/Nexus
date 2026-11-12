@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.MySql</RootNamespace>
+    <AssemblyName>Nexus.MySql</AssemblyName>
+    <Description>A Nexus source that reads the tables and views of a MySQL database.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Sql\Nexus.Sql.csproj" />
+  </ItemGroup>
+
+</Project>

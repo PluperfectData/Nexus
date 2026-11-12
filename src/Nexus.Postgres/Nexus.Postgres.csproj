@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Postgres</RootNamespace>
+    <AssemblyName>Nexus.Postgres</AssemblyName>
+    <Description>A Nexus source that reads the tables and views of a PostgreSQL database.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Sql\Nexus.Sql.csproj" />
+  </ItemGroup>
+
+</Project>

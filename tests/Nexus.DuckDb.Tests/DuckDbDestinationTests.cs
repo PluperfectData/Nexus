@@ -128,6 +128,7 @@ public sealed class DuckDbDestinationTests
             new("flag", ColumnType.Boolean, true),
             new("day", ColumnType.Date, true),
             new("moment", ColumnType.Timestamp, true),
+            new("wall", ColumnType.DateTime, true),
             new("clock", ColumnType.Time, true),
             new("doc", ColumnType.Json, true),
             new("bytes", ColumnType.Binary, true),
@@ -141,6 +142,7 @@ public sealed class DuckDbDestinationTests
             true,
             new DateOnly(2026, 11, 11),
             new DateTimeOffset(2026, 11, 11, 17, 30, 0, TimeSpan.Zero),
+            new DateTime(2026, 11, 11, 9, 30, 0, DateTimeKind.Unspecified),
             new TimeOnly(9, 15, 30),
             """{"a":1}""",
             new byte[] { 1, 2, 3 },
@@ -149,7 +151,7 @@ public sealed class DuckDbDestinationTests
         await Write(WriteMode.Append, Schema(columns), Rows(values, new object?[columns.Length]));
 
         var rows = await Query(
-            "SELECT text, whole, money, ratio, flag, day, moment, clock, doc::VARCHAR, bytes FROM orders " +
+            "SELECT text, whole, money, ratio, flag, day, moment, wall, clock, doc::VARCHAR, bytes FROM orders " +
             "ORDER BY whole NULLS LAST");
         rows[0].ShouldBe(values);
         rows[1].ShouldAllBe(value => value == null);
@@ -284,7 +286,7 @@ public sealed class DuckDbDestinationTests
             var row = new object?[reader.FieldCount];
             for (var i = 0; i < row.Length; i++)
             {
-                row[i] = reader.IsDBNull(i) ? null : Normalize(reader.GetValue(i));
+                row[i] = reader.IsDBNull(i) ? null : Normalize(reader.GetValue(i), reader.GetDataTypeName(i));
             }
 
             rows.Add(row);
@@ -294,11 +296,11 @@ public sealed class DuckDbDestinationTests
     }
 
     // DuckDB.NET reads TIMESTAMPTZ as a UTC DateTime and BLOB as a stream.
-    private static object Normalize(object value)
+    private static object Normalize(object value, string typeName)
     {
         switch (value)
         {
-            case DateTime utc:
+            case DateTime utc when typeName.Contains("TZ", StringComparison.OrdinalIgnoreCase):
                 utc.Kind.ShouldNotBe(DateTimeKind.Local);
                 return new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc));
 

@@ -27,6 +27,9 @@ public enum ColumnType
     /// <summary>A <see cref="DateTimeOffset"/> at UTC.</summary>
     Timestamp,
 
+    /// <summary>A <see cref="System.DateTime"/> with no time zone, of kind <see cref="DateTimeKind.Unspecified"/>.</summary>
+    DateTime,
+
     /// <summary>A <see cref="TimeOnly"/>.</summary>
     Time,
 

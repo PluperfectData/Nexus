@@ -2,9 +2,14 @@
   <Folder Name="/src/">
     <Project Path="src/Nexus.Abstractions/Nexus.Abstractions.csproj" />
     <Project Path="src/Nexus.DuckDb/Nexus.DuckDb.csproj" />
+    <Project Path="src/Nexus.MySql/Nexus.MySql.csproj" />
+    <Project Path="src/Nexus.Postgres/Nexus.Postgres.csproj" />
+    <Project Path="src/Nexus.Sql/Nexus.Sql.csproj" />
+    <Project Path="src/Nexus.SqlServer/Nexus.SqlServer.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nexus.Abstractions.Tests/Nexus.Abstractions.Tests.csproj" />
     <Project Path="tests/Nexus.DuckDb.Tests/Nexus.DuckDb.Tests.csproj" />
+    <Project Path="tests/Nexus.Sql.Tests/Nexus.Sql.Tests.csproj" />
   </Folder>
 </Solution>

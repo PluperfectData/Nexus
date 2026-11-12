@@ -256,6 +256,7 @@ internal sealed class WriteSession : IAsyncDisposable
                 bool flag => row.AppendValue(flag),
                 DateOnly date => row.AppendValue(date),
                 DateTimeOffset timestamp => row.AppendValue(timestamp),
+                DateTime dateTime => row.AppendValue(dateTime),
                 TimeOnly time => row.AppendValue(time),
                 byte[] bytes => row.AppendValue(bytes),
                 _ => throw new UnreachableException(),

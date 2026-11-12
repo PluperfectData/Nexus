@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Sql</RootNamespace>
+    <AssemblyName>Nexus.Sql</AssemblyName>
+    <Description>The shared reader behind the Nexus MySQL, PostgreSQL, and SQL Server sources.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nexus.MySql" />
+    <InternalsVisibleTo Include="Nexus.Postgres" />
+    <InternalsVisibleTo Include="Nexus.SqlServer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
