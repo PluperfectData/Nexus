@@ -15,7 +15,7 @@ public sealed partial class SchwabOrders(HttpClient client, TimeProvider? timePr
 
     /// <summary>Places an order in the account.</summary>
     /// <returns>Schwab's id for the new order, or null when Schwab accepted it without returning one.</returns>
-    public async Task<ActionResult<long?>> PlaceAsync(
+    public async Task<ActionOutcome<long?>> PlaceAsync(
         ConnectorConfig config,
         string accountNumber,
         SchwabOrder order,
@@ -27,12 +27,12 @@ public sealed partial class SchwabOrders(HttpClient client, TimeProvider? timePr
 
         using var response = await api.SendActionAsync(HttpMethod.Post, $"accounts/{hash}/orders", order, ct)
             .ConfigureAwait(false);
-        return new ActionResult<long?>(OrderId(response), api.Refreshed);
+        return new ActionOutcome<long?>(OrderId(response), api.Refreshed);
     }
 
     /// <summary>Replaces a working order with a changed one. Schwab cancels the old order and creates a new one.</summary>
     /// <returns>Schwab's id for the new order, or null when Schwab did not return one.</returns>
-    public async Task<ActionResult<long?>> ReplaceAsync(
+    public async Task<ActionOutcome<long?>> ReplaceAsync(
         ConnectorConfig config,
         string accountNumber,
         long orderId,
@@ -45,11 +45,11 @@ public sealed partial class SchwabOrders(HttpClient client, TimeProvider? timePr
 
         using var response = await api.SendActionAsync(HttpMethod.Put, OrderPath(hash, orderId), order, ct)
             .ConfigureAwait(false);
-        return new ActionResult<long?>(OrderId(response), api.Refreshed);
+        return new ActionOutcome<long?>(OrderId(response), api.Refreshed);
     }
 
     /// <summary>Cancels a working order.</summary>
-    public async Task<ActionResult> CancelAsync(
+    public async Task<ActionOutcome> CancelAsync(
         ConnectorConfig config,
         string accountNumber,
         long orderId,
@@ -60,7 +60,7 @@ public sealed partial class SchwabOrders(HttpClient client, TimeProvider? timePr
 
         using var response = await api.SendActionAsync(HttpMethod.Delete, OrderPath(hash, orderId), null, ct)
             .ConfigureAwait(false);
-        return new ActionResult(api.Refreshed);
+        return new ActionOutcome(api.Refreshed);
     }
 
     private static async Task<string> HashAsync(SchwabApi api, string accountNumber, CancellationToken ct) =>

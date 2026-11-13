@@ -63,7 +63,7 @@ Planned sources: Google Sheets and Stripe.
 An action is a typed method on the connector's own class, such as `SchwabOrders.PlaceAsync`. There is no
 shared action interface.
 
-- It returns `ActionResult`, or `ActionResult<T>` with the service's `Value`. Persist
+- It returns `ActionOutcome`, or `ActionOutcome<T>` with the service's `Value`. Persist
   `RefreshedCredentials` when it is not null.
 - It is sent once and never retried. A failure after sending throws `OutcomeUnknown`.
 
@@ -313,9 +313,9 @@ spec is `SchwabSource.Spec`.
 
 | `SchwabOrders` method | Request | Returns |
 |---|---|---|
-| `PlaceAsync(config, accountNumber, order)` | `POST /accounts/{hash}/orders` | `ActionResult<long?>`, the new order's id |
-| `ReplaceAsync(config, accountNumber, orderId, order)` | `PUT /accounts/{hash}/orders/{orderId}` | `ActionResult<long?>`, the replacement's id |
-| `CancelAsync(config, accountNumber, orderId)` | `DELETE /accounts/{hash}/orders/{orderId}` | `ActionResult` |
+| `PlaceAsync(config, accountNumber, order)` | `POST /accounts/{hash}/orders` | `ActionOutcome<long?>`, the new order's id |
+| `ReplaceAsync(config, accountNumber, orderId, order)` | `PUT /accounts/{hash}/orders/{orderId}` | `ActionOutcome<long?>`, the replacement's id |
+| `CancelAsync(config, accountNumber, orderId)` | `DELETE /accounts/{hash}/orders/{orderId}` | `ActionOutcome` |
 
 The id comes from the `Location` header, and is null when Schwab sends none.
 
@@ -341,6 +341,12 @@ The id comes from the `Location` header, and is null when Schwab sends none.
 
 `tools/Nexus.Schwab.SignIn` signs in to Schwab in the browser and saves the tokens to its user secrets, id
 `Nexus.Schwab.SignIn`. It is not packed.
+
+First, register the app on Schwab's developer portal with the callback URL the tool listens on:
+`https://127.0.0.1` with a port, such as `https://127.0.0.1:8182`, as its own entry and with no trailing slash.
+Any other callback, a placeholder included, makes Schwab's sign-in page fail with "We are unable to complete
+your request." Changing the callback sends the app back for approval, which can take days. Sign-in works only
+while the app shows **Ready For Use**.
 
 | User secret | Set by | Holds |
 |---|---|---|
