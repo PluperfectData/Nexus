@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Push</RootNamespace>
+    <AssemblyName>Nexus.Push</AssemblyName>
+    <Description>A Nexus destination that writes streams through an app's push API, such as Scry's.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -392,6 +392,9 @@ FodyWeavers.xsd
 *.duckdb.wal
 !*.duckdb/
 
+# The service's runtime files, its encryption keys among them
+src/Nexus.Service/data/
+
 # Working records, kept local
 docs/TaskBoard.md
 docs/Records.md

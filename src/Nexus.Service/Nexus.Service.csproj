@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Nexus.Service</RootNamespace>
+    <UserSecretsId>nexus-service</UserSecretsId>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+    <ProjectReference Include="..\Nexus.MySql\Nexus.MySql.csproj" />
+    <ProjectReference Include="..\Nexus.Postgres\Nexus.Postgres.csproj" />
+    <ProjectReference Include="..\Nexus.Push\Nexus.Push.csproj" />
+    <ProjectReference Include="..\Nexus.SqlServer\Nexus.SqlServer.csproj" />
+  </ItemGroup>
+
+</Project>

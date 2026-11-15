@@ -11,16 +11,20 @@ records in memory, or piped into a destination.
 | `src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync`, `Tap` |
 | `src/Nexus.Csv` | `CsvSource` |
 | `src/Nexus.DuckDb` | `DuckDbDestination` |
+| `src/Nexus.Push` | `PushDestination`, which writes through an app's push API, such as Scry's |
 | `src/Nexus.Sql` | `SqlSettings` and the reader shared by the SQL sources |
 | `src/Nexus.MySql` | `MySqlSource` |
 | `src/Nexus.Postgres` | `PostgresSource` |
 | `src/Nexus.SqlServer` | `SqlServerSource` |
 | `src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
+| `src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
 | `tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
 | `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
 | `tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
 | `tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
+| `tests/Nexus.Push.Tests` | NUnit and Shouldly, against a fake that keeps Scry's push API contract |
 | `tests/Nexus.Schwab.Tests` | NUnit and Shouldly, against canned Schwab responses |
+| `tests/Nexus.Service.Tests` | NUnit and Shouldly, hosting the service over a SQLite file with a fake source and push API |
 | `tests/Nexus.Sql.Tests` | NUnit and Shouldly, against real MySQL, PostgreSQL, and SQL Server servers |
 
 ## Connector matrix
@@ -32,6 +36,7 @@ records in memory, or piped into a destination.
 | DuckDB | `Nexus.DuckDb` | | ✓ | |
 | MySQL | `Nexus.MySql` | ✓ | | |
 | PostgreSQL | `Nexus.Postgres` | ✓ | | |
+| Push API | `Nexus.Push` | | ✓ | |
 | SQL Server | `Nexus.SqlServer` | ✓ | | |
 
 Planned sources: Google Sheets and Stripe.
@@ -167,6 +172,34 @@ The original exception is `InnerException`.
 | `Time` | `TIME` |
 | `Json` | `JSON` |
 | `Binary` | `BLOB` |
+
+## Push destination
+
+`PushDestination`, id `push`, writes each stream to a table of the same name through an app's push API, such
+as Scry's. Settings: `url`, the push API's address, such as `http://localhost:6161/ingest`, and `key`, a push
+API key, which is secret. `CheckAsync` calls `GET {url}`, which names the key.
+
+| Write mode | Requests |
+|---|---|
+| `Append` | `PUT {url}/sources/{table}` with the columns and key, then batches with `mode: append` |
+| `Upsert` | The same `PUT`, then batches with `mode: merge`. Requires `PrimaryKey`. |
+| `Overwrite` | `POST {url}/sources/{table}/replace` with the columns, after a `PUT` when the table is new, then batches. The app swaps the replacement in on `POST .../commit` when the write ends, and the stream's checkpoints are yielded after it. |
+
+- Before each other checkpoint, every row waiting is sent and the stream is committed.
+- A batch holds at most 5,000 rows and 8 MB. Each carries an id unique to the write, so the app skips one
+  sent twice.
+- Values go in the forms the push API reads: a decimal as text, a timestamp with its offset, a date-time
+  with none, a date as `yyyy-MM-dd`, JSON as itself, and bytes as base64. A double that is not finite, or JSON
+  text that does not parse, is a `SourceError`.
+
+| Failure | `ConnectorErrorKind` |
+|---|---|
+| An address that is not http or https, or no key | `ConfigInvalid` |
+| 401, 403, and a 404 outside a replace | `ConfigInvalid` |
+| 409, a column that changed or went | `SourceError`, saying a full refresh replaces the table |
+| 429, after `HttpRetry`'s tries | `RateLimited` |
+| 5xx, a timeout, or no answer, after `HttpRetry`'s tries | `Transient` |
+| Any other answer | `SourceError`, carrying the app's detail |
 
 ## CSV source
 
@@ -416,6 +449,33 @@ dotnet run --project tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --mo
 - Balances, positions, quotes, and movers are appended, a snapshot each run; transactions, orders, and candles are
   upserted by their keys, so a run can be repeated into the same file.
 - Tokens Schwab refreshes during the read are saved back to user secrets the same way the sign-in saves them.
+
+## Service
+
+`src/Nexus.Service` keeps workspaces, apps, their destinations, connections, and syncs in a MySQL database of its
+own, and runs each sync by reading its stream through a source connector and writing it through
+`PushDestination`. It reads through the MySQL, PostgreSQL, and SQL Server sources. It has no routes yet beyond
+`GET /health`.
+
+- A worker runs queued syncs one at a time. A full refresh overwrites its table. An incremental sync upserts
+  by the stream's primary key, or appends when there is none, and resumes from the last checkpoint the
+  destination committed.
+- A `Transient` or `RateLimited` failure runs again after 1, 5, and 15 minutes, or after a longer wait the
+  provider asked for, then stops. An `AuthExpired` failure marks the connection as needing a sign-in.
+- A sync that was queued or running when the service stopped runs again when it starts.
+- Connection settings, tokens, and push keys are encrypted with ASP.NET Data Protection. Its keys live in
+  `data/keys`, beside the service, outside the database they protect.
+
+Run it on `http://localhost:6163` with a MySQL 8.4 connection string as the user secret
+`ConnectionStrings:Nexus`. The service applies its migrations when it starts.
+
+```bash
+dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project src/Nexus.Service
+```
+
+```bash
+dotnet run --project src/Nexus.Service
+```
 
 ## Usage
 
