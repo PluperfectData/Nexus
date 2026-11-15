@@ -372,6 +372,19 @@ dotnet run --project tools/Nexus.Schwab.SignIn
   Other keys in the file are kept, and the file is replaced in one move.
 - It waits 5 minutes for the redirect, and never prints a token.
 
+With `read`, the tool runs the connector against Schwab with the saved sign-in. It reads balances, positions,
+transactions, and orders into a DuckDB file and prints each stream's row count. It only reads; orders stay off.
+
+```bash
+dotnet run --project tools/Nexus.Schwab.SignIn -- read
+```
+
+- `--from yyyy-MM-dd` sets where transactions start, a year back by default. `--out path.duckdb` sets the file,
+  `%LOCALAPPDATA%\Nexus\schwab.duckdb` by default.
+- Balances and positions are appended, a snapshot each run; transactions and orders are upserted by their keys, so
+  a run can be repeated into the same file.
+- Tokens Schwab refreshes during the read are saved back to user secrets the same way the sign-in saves them.
+
 ## Usage
 
 Standalone, in memory:
