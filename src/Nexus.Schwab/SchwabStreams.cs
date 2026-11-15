@@ -10,6 +10,12 @@ internal sealed record TransactionEntry(string Number, JsonElement Transaction, 
 
 internal sealed record OrderEntry(string Number, JsonElement Order, JsonElement Leg, JsonElement Instrument);
 
+internal sealed record CandleEntry(string Symbol, string Candles, JsonElement Candle);
+
+internal sealed record QuoteSnapshot(DateTimeOffset ReadAt, string Symbol, JsonElement Entry, JsonElement Quote, JsonElement Reference);
+
+internal sealed record MoverSnapshot(DateTimeOffset ReadAt, string Index, string Sort, long Rank, JsonElement Screener);
+
 /// <summary>A stream's columns, each paired with how it reads its value, so a row always matches its schema.</summary>
 internal sealed class StreamDef<T>
 {
@@ -174,5 +180,72 @@ internal static class SchwabStreams
             .Json("activity", s => SchwabJson.Json(s.Order, "orderActivityCollection")),
         primaryKey: ["order_id"],
         cursorFields: [],
+        modes: [SyncMode.Incremental]);
+
+    public static StreamDef<CandleEntry> PriceHistory { get; } = new(
+        SchwabSource.PriceHistoryStream,
+        new Columns<CandleEntry>()
+            .Text("symbol", s => s.Symbol, nullable: false)
+            .Text("candle", s => s.Candles, nullable: false)
+            .Timestamp("time", s => SchwabJson.EpochMilliseconds(s.Candle, "datetime"), nullable: false)
+            .Decimal("open", s => SchwabJson.Decimal(s.Candle, "open"))
+            .Decimal("high", s => SchwabJson.Decimal(s.Candle, "high"))
+            .Decimal("low", s => SchwabJson.Decimal(s.Candle, "low"))
+            .Decimal("close", s => SchwabJson.Decimal(s.Candle, "close"))
+            .Int64("volume", s => SchwabJson.Int64(s.Candle, "volume")),
+        primaryKey: ["symbol", "candle", "time"],
+        cursorFields: ["time"],
+        modes: [SyncMode.FullRefresh, SyncMode.Incremental]);
+
+    public static StreamDef<QuoteSnapshot> Quotes { get; } = new(
+        SchwabSource.QuotesStream,
+        new Columns<QuoteSnapshot>()
+            .Timestamp("read_at", s => s.ReadAt, nullable: false)
+            .Text("symbol", s => s.Symbol, nullable: false)
+            .Text("asset_type", s => SchwabJson.String(s.Entry, "assetMainType"))
+            .Text("description", s => SchwabJson.String(s.Reference, "description"))
+            .Text("exchange", s => SchwabJson.String(s.Reference, "exchangeName"))
+            .Decimal("last_price", s => SchwabJson.Decimal(s.Quote, "lastPrice"))
+            .Decimal("bid_price", s => SchwabJson.Decimal(s.Quote, "bidPrice"))
+            .Decimal("ask_price", s => SchwabJson.Decimal(s.Quote, "askPrice"))
+            .Int64("bid_size", s => SchwabJson.Int64(s.Quote, "bidSize"))
+            .Int64("ask_size", s => SchwabJson.Int64(s.Quote, "askSize"))
+            .Decimal("open_price", s => SchwabJson.Decimal(s.Quote, "openPrice"))
+            .Decimal("high_price", s => SchwabJson.Decimal(s.Quote, "highPrice"))
+            .Decimal("low_price", s => SchwabJson.Decimal(s.Quote, "lowPrice"))
+            .Decimal("close_price", s => SchwabJson.Decimal(s.Quote, "closePrice"))
+            .Decimal("net_change", s => SchwabJson.Decimal(s.Quote, "netChange"))
+            .Decimal("net_percent_change", s => SchwabJson.Decimal(s.Quote, "netPercentChange"))
+            .Decimal("mark", s => SchwabJson.Decimal(s.Quote, "mark"))
+            .Int64("total_volume", s => SchwabJson.Int64(s.Quote, "totalVolume"))
+            .Decimal("week_52_high", s => SchwabJson.Decimal(s.Quote, "52WeekHigh"))
+            .Decimal("week_52_low", s => SchwabJson.Decimal(s.Quote, "52WeekLow"))
+            .Timestamp("quote_time", s => SchwabJson.EpochMilliseconds(s.Quote, "quoteTime"))
+            .Timestamp("trade_time", s => SchwabJson.EpochMilliseconds(s.Quote, "tradeTime"))
+            .Json("quote", s => SchwabJson.Json(s.Entry, "quote")),
+        primaryKey: ["read_at", "symbol"],
+        cursorFields: ["read_at"],
+        modes: [SyncMode.Incremental]);
+
+    // Sources disagree on the names of a mover's price and change, so either name is read.
+    public static StreamDef<MoverSnapshot> Movers { get; } = new(
+        SchwabSource.MoversStream,
+        new Columns<MoverSnapshot>()
+            .Timestamp("read_at", s => s.ReadAt, nullable: false)
+            .Text("index_symbol", s => s.Index, nullable: false)
+            .Text("sort", s => s.Sort, nullable: false)
+            .Int64("rank", s => s.Rank, nullable: false)
+            .Text("symbol", s => SchwabJson.String(s.Screener, "symbol"), nullable: false)
+            .Text("description", s => SchwabJson.String(s.Screener, "description"))
+            .Decimal("last_price", s => SchwabJson.Decimal(s.Screener, "lastPrice") ?? SchwabJson.Decimal(s.Screener, "last"))
+            .Decimal("net_change", s => SchwabJson.Decimal(s.Screener, "netChange") ?? SchwabJson.Decimal(s.Screener, "change"))
+            .Decimal("net_percent_change", s => SchwabJson.Decimal(s.Screener, "netPercentChange"))
+            .Int64("volume", s => SchwabJson.Int64(s.Screener, "volume"))
+            .Int64("total_volume", s => SchwabJson.Int64(s.Screener, "totalVolume"))
+            .Int64("trades", s => SchwabJson.Int64(s.Screener, "trades"))
+            .Decimal("market_share", s => SchwabJson.Decimal(s.Screener, "marketShare"))
+            .Text("direction", s => SchwabJson.String(s.Screener, "direction")),
+        primaryKey: ["read_at", "index_symbol", "sort", "symbol"],
+        cursorFields: ["read_at"],
         modes: [SyncMode.Incremental]);
 }

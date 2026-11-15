@@ -15,6 +15,7 @@ internal sealed class SchwabApi
     public static readonly Uri TokenUri = new("https://api.schwabapi.com/v1/oauth/token");
 
     private static readonly Uri TraderUri = new("https://api.schwabapi.com/trader/v1/");
+    private static readonly Uri MarketDataUri = new("https://api.schwabapi.com/marketdata/v1/");
     private static readonly TimeSpan RefreshMargin = TimeSpan.FromMinutes(5);
 
     private readonly HttpClient _client;
@@ -67,10 +68,15 @@ internal sealed class SchwabApi
             ConnectorErrorKind.ConfigInvalid,
             $"Account {accountNumber} is not linked to this Schwab sign-in.");
 
-    /// <summary>Reads JSON, retrying network failures, 429, and 5xx responses.</summary>
-    public async Task<JsonDocument> GetAsync(string pathAndQuery, CancellationToken ct)
+    /// <summary>Reads JSON from the Trader API, retrying network failures, 429, and 5xx responses.</summary>
+    public Task<JsonDocument> GetAsync(string pathAndQuery, CancellationToken ct) => GetFromAsync(new Uri(TraderUri, pathAndQuery), ct);
+
+    /// <summary>Reads JSON from the Market Data API, retrying as <see cref="GetAsync"/> does.</summary>
+    public Task<JsonDocument> GetMarketDataAsync(string pathAndQuery, CancellationToken ct) =>
+        GetFromAsync(new Uri(MarketDataUri, pathAndQuery), ct);
+
+    private async Task<JsonDocument> GetFromAsync(Uri uri, CancellationToken ct)
     {
-        var uri = new Uri(TraderUri, pathAndQuery);
         using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, uri), once: false, ct)
             .ConfigureAwait(false);
 

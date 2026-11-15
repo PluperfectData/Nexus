@@ -128,7 +128,7 @@ public sealed class ReadToMemoryTests
 
     private sealed class ScriptedSource(Func<IAsyncEnumerable<SyncMessage>> script) : ISourceConnector
     {
-        public ConnectorSpec Spec { get; } = new("scripted", "Scripted", "1.0.0", AuthKind.ConnectionFields, []);
+        public ConnectorSpec Spec { get; } = new("scripted", "Scripted", "Sends the messages a test gives it.", "1.0.0", AuthKind.ConnectionFields, []);
 
         public Task<CheckResult> CheckAsync(ConnectorConfig config, CancellationToken ct) =>
             Task.FromResult(CheckResult.Success);

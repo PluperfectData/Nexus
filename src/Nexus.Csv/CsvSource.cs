@@ -27,6 +27,7 @@ public sealed class CsvSource : ISourceConnector
     public ConnectorSpec Spec { get; } = new(
         Id: "csv",
         DisplayName: "CSV",
+        Description: "Reads a delimited text file, such as a CSV, into one table.",
         Version: typeof(CsvSource).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         Auth: AuthKind.FileUpload,
         Fields:

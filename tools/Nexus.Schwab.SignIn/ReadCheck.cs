@@ -19,15 +19,22 @@ internal static class ReadCheck
         [SchwabSource.PositionsStream] = WriteMode.Append,
         [SchwabSource.TransactionsStream] = WriteMode.Upsert,
         [SchwabSource.OrdersStream] = WriteMode.Upsert,
+
+        // Each read fetches a symbol's newest candle again, so it replaces the one already written.
+        [SchwabSource.PriceHistoryStream] = WriteMode.Upsert,
+        [SchwabSource.QuotesStream] = WriteMode.Append,
+        [SchwabSource.MoversStream] = WriteMode.Append,
     };
 
     public static async Task<int> RunAsync(IReadOnlyList<string> args, CancellationToken ct)
     {
-        if (!TryParse(args, out var from, out var output, out var problem))
+        if (!TryParse(args, out var options, out var problem))
         {
             await Console.Error.WriteLineAsync(problem);
             return 1;
         }
+
+        var (from, output) = (options.From, options.Output);
 
         var assembly = typeof(ReadCheck).Assembly;
         var id = assembly.GetCustomAttribute<UserSecretsIdAttribute>()!.UserSecretsId;
@@ -46,7 +53,13 @@ internal static class ReadCheck
             ? expiry
             : (DateTimeOffset?)null;
         var config = new ConnectorConfig(
-            new Dictionary<string, string?> { [SchwabSettings.StartDate] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },
+            new Dictionary<string, string?>
+            {
+                [SchwabSettings.StartDate] = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                [SchwabSettings.Symbols] = options.Symbols,
+                [SchwabSettings.Candles] = options.Candles,
+                [SchwabSettings.Movers] = options.Movers,
+            },
             Tokens: new OAuthTokens(secrets[SignInFlow.AccessToken]!, secrets[SignInFlow.RefreshToken], expiresAt),
             Client: new OAuthClient(secrets[SignInFlow.AppKey]!.Trim(), secrets[SignInFlow.AppSecret]!.Trim()));
 
@@ -69,6 +82,10 @@ internal static class ReadCheck
                 if (message is RecordBatch batch)
                 {
                     rows[batch.Stream] += batch.Rows.Count;
+                }
+                else if (message is LogMessage log)
+                {
+                    Console.WriteLine(log.Text);
                 }
 
                 yield return message;
@@ -124,10 +141,14 @@ internal static class ReadCheck
         return 0;
     }
 
-    private static bool TryParse(IReadOnlyList<string> args, out DateOnly from, out string output, out string problem)
+    private static bool TryParse(IReadOnlyList<string> args, out ReadOptions options, out string problem)
     {
-        from = DateOnly.FromDateTime(DateTime.Today).AddYears(-1);
-        output = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nexus", "schwab.duckdb");
+        options = new ReadOptions(
+            DateOnly.FromDateTime(DateTime.Today).AddYears(-1),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nexus", "schwab.duckdb"),
+            Symbols: null,
+            Candles: null,
+            Movers: null);
         problem = string.Empty;
 
         for (var i = 0; i < args.Count; i += 2)
@@ -136,18 +157,30 @@ internal static class ReadCheck
             switch (args[i])
             {
                 case "--from" when DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date):
-                    from = date;
+                    options = options with { From = date };
                     break;
                 case "--out" when !string.IsNullOrWhiteSpace(value):
-                    output = Path.GetFullPath(value);
+                    options = options with { Output = Path.GetFullPath(value) };
+                    break;
+                case "--symbols" when !string.IsNullOrWhiteSpace(value):
+                    options = options with { Symbols = value };
+                    break;
+                case "--candles" when !string.IsNullOrWhiteSpace(value):
+                    options = options with { Candles = value };
+                    break;
+                case "--movers" when !string.IsNullOrWhiteSpace(value):
+                    options = options with { Movers = value };
                     break;
                 default:
-                    problem = "Usage: read [--from yyyy-MM-dd] [--out path.duckdb]. Without them, it reads a year back into "
-                        + output + ".";
+                    problem = "Usage: read [--from yyyy-MM-dd] [--out path.duckdb] [--symbols AAPL,SPY] [--candles Daily] "
+                        + "[--movers $SPX,$DJI]. Without them, it reads a year back into " + options.Output
+                        + ", with daily candles and quotes for the account's holdings only, and no movers.";
                     return false;
             }
         }
 
         return true;
     }
+
+    private sealed record ReadOptions(DateOnly From, string Output, string? Symbols, string? Candles, string? Movers);
 }

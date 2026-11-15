@@ -60,6 +60,7 @@ public sealed record OAuthSpec(Uri AuthorizeUrl, Uri TokenUrl, IReadOnlyList<str
 /// <summary>What a connector is and the settings it needs.</summary>
 /// <param name="Id">A stable identifier, such as <c>mysql</c>.</param>
 /// <param name="DisplayName">The name shown to users.</param>
+/// <param name="Description">One sentence, shown to users, saying what the connector reads or writes.</param>
 /// <param name="Version">The connector's version.</param>
 /// <param name="Auth">How the connector authenticates.</param>
 /// <param name="Fields">The settings the host asks for.</param>
@@ -67,6 +68,7 @@ public sealed record OAuthSpec(Uri AuthorizeUrl, Uri TokenUrl, IReadOnlyList<str
 public sealed record ConnectorSpec(
     string Id,
     string DisplayName,
+    string Description,
     string Version,
     AuthKind Auth,
     IReadOnlyList<SettingField> Fields,

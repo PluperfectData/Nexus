@@ -63,11 +63,17 @@ internal static class Schwab
         bool allowOrders = false,
         DateTimeOffset? expiresAt = null,
         bool withClient = true,
-        bool withTokens = true) => new(
+        bool withTokens = true,
+        string? symbols = null,
+        string? candles = null,
+        string? movers = null) => new(
         new Dictionary<string, string?>
         {
             [SchwabSettings.StartDate] = startDate,
             [SchwabSettings.AllowOrders] = allowOrders ? "true" : null,
+            [SchwabSettings.Symbols] = symbols,
+            [SchwabSettings.Candles] = candles,
+            [SchwabSettings.Movers] = movers,
         },
         Tokens: withTokens ? new OAuthTokens("access", "refresh", expiresAt ?? Now.AddMinutes(30)) : null,
         Client: withClient ? new OAuthClient("app-key", "app-secret") : null);

@@ -21,6 +21,7 @@ internal sealed class SqlSource : ISourceConnector
         Spec = new ConnectorSpec(
             Id: dialect.Id,
             DisplayName: dialect.DisplayName,
+            Description: $"Reads tables from a {dialect.DisplayName} database.",
             Version: dialect.GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
             Auth: AuthKind.ConnectionFields,
             Fields:

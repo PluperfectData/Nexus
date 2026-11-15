@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace Nexus.Schwab;
 
@@ -19,7 +20,21 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
     /// <summary>Orders entered in Schwab's lookback window, read again on every sync.</summary>
     public const string OrdersStream = "orders";
 
+    /// <summary>Candles for each held and listed symbol, from the start date forward, at the chosen candle size.</summary>
+    public const string PriceHistoryStream = "price_history";
+
+    /// <summary>A quote for each held and listed symbol, appended on every read.</summary>
+    public const string QuotesStream = "quotes";
+
+    /// <summary>Each listed index's movers by volume, trades, and percent change up and down, appended on every read.</summary>
+    public const string MoversStream = "movers";
+
     private const int BatchSize = 10_000;
+
+    // Schwab documents no limit on symbols per quotes request; 100 keeps each URL short.
+    private const int QuotesPerRequest = 100;
+
+    private static readonly string[] MoverSorts = ["VOLUME", "TRADES", "PERCENT_CHANGE_UP", "PERCENT_CHANGE_DOWN"];
 
     // Schwab returns at most 3,000 transactions or orders per request.
     private const int PageLimit = 3_000;
@@ -44,6 +59,9 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         SchwabStreams.Positions.Spec,
         SchwabStreams.Transactions.Spec,
         SchwabStreams.Orders.Spec,
+        SchwabStreams.PriceHistory.Spec,
+        SchwabStreams.Quotes.Spec,
+        SchwabStreams.Movers.Spec,
     ]);
 
     private readonly HttpClient _client = client ?? throw new ArgumentNullException(nameof(client));
@@ -60,6 +78,8 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         try
         {
             _ = SchwabSettings.ReadStartDate(config);
+            _ = SchwabSettings.ReadCandles(config);
+            _ = SchwabSettings.ReadMovers(config);
             var accounts = await new SchwabApi(_client, _time, config).AccountsAsync(ct).ConfigureAwait(false);
             return accounts.Count > 0
                 ? CheckResult.Success
@@ -102,7 +122,8 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         JsonDocument? snapshot = null;
         try
         {
-            if (request.Streams.Any(selection => selection.Stream is BalancesStream or PositionsStream))
+            // Quotes and price history cover the account's holdings, so they need the snapshot too.
+            if (request.Streams.Any(selection => selection.Stream is BalancesStream or PositionsStream or QuotesStream or PriceHistoryStream))
             {
                 snapshot = await api.GetAsync("accounts?fields=positions", ct).ConfigureAwait(false);
                 if (api.TakeRefreshed() is { } tokens)
@@ -140,8 +161,34 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
 
                         break;
 
-                    default:
+                    case OrdersStream:
                         await foreach (var message in OrdersAsync(api, ct).ConfigureAwait(false))
+                        {
+                            yield return message;
+                        }
+
+                        break;
+
+                    case PriceHistoryStream:
+                        var charted = Watched(config, snapshot!, withOptions: false);
+                        await foreach (var message in PriceHistoryAsync(api, config, selection, request, charted, ct).ConfigureAwait(false))
+                        {
+                            yield return message;
+                        }
+
+                        break;
+
+                    case QuotesStream:
+                        var quoted = Watched(config, snapshot!, withOptions: true);
+                        await foreach (var message in QuotesAsync(api, quoted, readAt, ct).ConfigureAwait(false))
+                        {
+                            yield return message;
+                        }
+
+                        break;
+
+                    default:
+                        await foreach (var message in MoversAsync(api, SchwabSettings.ReadMovers(config), readAt, ct).ConfigureAwait(false))
                         {
                             yield return message;
                         }
@@ -161,7 +208,8 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         var spec = Catalog.Streams.FirstOrDefault(stream => stream.Name == selection.Stream)
             ?? throw new ConnectorException(
                 ConnectorErrorKind.ConfigInvalid,
-                $"Stream '{selection.Stream}' does not exist. The streams are balances, positions, transactions, and orders.");
+                $"Stream '{selection.Stream}' does not exist. The streams are balances, positions, transactions, orders, "
+                + "price_history, quotes, and movers.");
 
         if (!spec.SyncModes.Contains(selection.Mode))
         {
@@ -434,5 +482,212 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         }
 
         yield return new StateCheckpoint(stream.Spec.Name, EmptyState);
+    }
+
+    /// <summary>The listed symbols and every symbol an account holds, in ordinal order.</summary>
+    private static List<string> Watched(ConnectorConfig config, JsonDocument snapshot, bool withOptions)
+    {
+        var symbols = new SortedSet<string>(SchwabSettings.ReadSymbols(config), StringComparer.Ordinal);
+        foreach (var entry in SchwabJson.Items(snapshot.RootElement))
+        {
+            foreach (var position in SchwabJson.Items(SchwabJson.Property(entry, "securitiesAccount") ?? default, "positions"))
+            {
+                var instrument = SchwabJson.Property(position, "instrument") ?? default;
+                if (SchwabJson.String(instrument, "symbol") is { } symbol
+                    && (withOptions || SchwabJson.String(instrument, "assetType") != "OPTION"))
+                {
+                    symbols.Add(symbol);
+                }
+            }
+        }
+
+        return [.. symbols];
+    }
+
+    private static JsonElement CandleState(CandleSize size, Dictionary<string, DateTimeOffset> latest) =>
+        JsonSerializer.SerializeToElement(new
+        {
+            cursor = "time",
+            candles = size.Label,
+            symbols = latest.ToDictionary(pair => pair.Key, pair => pair.Value.ToString("O", CultureInfo.InvariantCulture)),
+        });
+
+    /// <summary>Each symbol's newest candle time from the saved state, or none when the state is for another candle size.</summary>
+    private static Dictionary<string, DateTimeOffset> SavedCandles(ReadRequest request, CandleSize size)
+    {
+        var latest = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        if (request.State is null
+            || !request.State.TryGetValue(PriceHistoryStream, out var state)
+            || SchwabJson.String(state, "candles") != size.Label
+            || SchwabJson.Property(state, "symbols") is not { ValueKind: JsonValueKind.Object } symbols)
+        {
+            return latest;
+        }
+
+        foreach (var symbol in symbols.EnumerateObject())
+        {
+            latest[symbol.Name] = symbol.Value.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParseExact(symbol.Value.GetString(), "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time)
+                    ? time.ToUniversalTime()
+                    : throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, $"The saved state for '{PriceHistoryStream}' cannot be read.");
+        }
+
+        return latest;
+    }
+
+    private async IAsyncEnumerable<SyncMessage> PriceHistoryAsync(
+        SchwabApi api,
+        ConnectorConfig config,
+        StreamSelection selection,
+        ReadRequest request,
+        IReadOnlyList<string> symbols,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var stream = SchwabStreams.PriceHistory;
+        var size = SchwabSettings.ReadCandles(config);
+        var start = new DateTimeOffset(SchwabSettings.ReadStartDate(config), TimeOnly.MinValue, TimeSpan.Zero);
+        var incremental = selection.Mode == SyncMode.Incremental;
+        var latest = incremental ? SavedCandles(request, size) : new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
+        var now = _time.GetUtcNow();
+        yield return new SchemaMessage(stream.Spec);
+
+        foreach (var symbol in symbols)
+        {
+            // The newest candle is read again, since it may still have been forming.
+            var from = latest.TryGetValue(symbol, out var newest) ? newest : start;
+            var query = string.Create(
+                CultureInfo.InvariantCulture,
+                $"pricehistory?symbol={Uri.EscapeDataString(symbol)}&periodType={size.PeriodType}&frequencyType={size.FrequencyType}"
+                + $"&frequency={size.Frequency}&startDate={from.ToUnixTimeMilliseconds()}&endDate={now.ToUnixTimeMilliseconds()}"
+                + $"&needExtendedHoursData=false&needPreviousClose=false");
+
+            var rows = new List<object?[]>();
+            using (var document = await api.GetMarketDataAsync(query, ct).ConfigureAwait(false))
+            {
+                foreach (var candle in SchwabJson.Items(document.RootElement, "candles"))
+                {
+                    rows.Add(stream.Row(new CandleEntry(symbol, size.Label, candle)));
+                    var time = SchwabJson.EpochMilliseconds(candle, "datetime")!.Value;
+                    if (!latest.TryGetValue(symbol, out var seen) || time > seen)
+                    {
+                        latest[symbol] = time;
+                    }
+                }
+            }
+
+            if (api.TakeRefreshed() is { } tokens)
+            {
+                yield return new CredentialsRefreshed(tokens);
+            }
+
+            foreach (var batch in Batches(rows))
+            {
+                yield return new RecordBatch(stream.Spec.Name, batch);
+            }
+
+            if (incremental)
+            {
+                yield return new StateCheckpoint(stream.Spec.Name, CandleState(size, latest));
+            }
+        }
+
+        yield return new StateCheckpoint(stream.Spec.Name, incremental ? CandleState(size, latest) : EmptyState);
+    }
+
+    private static async IAsyncEnumerable<SyncMessage> QuotesAsync(
+        SchwabApi api,
+        IReadOnlyList<string> symbols,
+        DateTimeOffset readAt,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var stream = SchwabStreams.Quotes;
+        yield return new SchemaMessage(stream.Spec);
+
+        var rows = new List<object?[]>();
+        var unknown = new List<string>();
+        foreach (var chunk in symbols.Chunk(QuotesPerRequest))
+        {
+            var query = $"quotes?symbols={string.Join(",", chunk.Select(Uri.EscapeDataString))}&fields=quote,reference";
+            using var document = await api.GetMarketDataAsync(query, ct).ConfigureAwait(false);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new ConnectorException(ConnectorErrorKind.SourceError, "Schwab sent quotes that are not keyed by symbol.");
+            }
+
+            foreach (var entry in document.RootElement.EnumerateObject())
+            {
+                if (entry.Name == "errors")
+                {
+                    unknown.AddRange(SchwabJson.Items(entry.Value, "invalidSymbols").Select(item => item.ToString()));
+                    continue;
+                }
+
+                rows.Add(stream.Row(new QuoteSnapshot(
+                    readAt,
+                    SchwabJson.String(entry.Value, "symbol") ?? entry.Name,
+                    entry.Value,
+                    SchwabJson.Property(entry.Value, "quote") ?? default,
+                    SchwabJson.Property(entry.Value, "reference") ?? default)));
+            }
+        }
+
+        if (api.TakeRefreshed() is { } tokens)
+        {
+            yield return new CredentialsRefreshed(tokens);
+        }
+
+        if (unknown.Count > 0)
+        {
+            yield return new LogMessage(LogLevel.Warning, $"Schwab has no quote for {string.Join(", ", unknown)}, so it was skipped.");
+        }
+
+        foreach (var batch in Batches(rows))
+        {
+            yield return new RecordBatch(stream.Spec.Name, batch);
+        }
+
+        yield return new StateCheckpoint(stream.Spec.Name, Cursor("read_at", readAt));
+    }
+
+    private static async IAsyncEnumerable<SyncMessage> MoversAsync(
+        SchwabApi api,
+        IReadOnlyList<string> indexes,
+        DateTimeOffset readAt,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var stream = SchwabStreams.Movers;
+        yield return new SchemaMessage(stream.Spec);
+
+        var rows = new List<object?[]>();
+        foreach (var index in indexes)
+        {
+            foreach (var sort in MoverSorts)
+            {
+                using var document = await api.GetMarketDataAsync($"movers/{index}?sort={sort}", ct).ConfigureAwait(false);
+
+                // The primary key holds one row per symbol in each list, so a repeat is dropped.
+                var listed = new HashSet<string>(StringComparer.Ordinal);
+                var rank = 0L;
+                foreach (var screener in SchwabJson.Items(document.RootElement, "screeners"))
+                {
+                    if (SchwabJson.String(screener, "symbol") is not { } symbol || listed.Add(symbol))
+                    {
+                        rows.Add(stream.Row(new MoverSnapshot(readAt, index, sort, ++rank, screener)));
+                    }
+                }
+            }
+        }
+
+        if (api.TakeRefreshed() is { } tokens)
+        {
+            yield return new CredentialsRefreshed(tokens);
+        }
+
+        foreach (var batch in Batches(rows))
+        {
+            yield return new RecordBatch(stream.Spec.Name, batch);
+        }
+
+        yield return new StateCheckpoint(stream.Spec.Name, Cursor("read_at", readAt));
     }
 }

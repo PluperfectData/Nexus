@@ -13,6 +13,7 @@ public sealed class DuckDbDestination : IDestinationConnector
     public ConnectorSpec Spec { get; } = new(
         Id: "duckdb",
         DisplayName: "DuckDB",
+        Description: "Writes each stream to a table in a DuckDB file.",
         Version: typeof(DuckDbDestination).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
         Auth: AuthKind.ConnectionFields,
         Fields: [new SettingField(PathSetting, "Database file", SettingKind.Text, Required: true)]);

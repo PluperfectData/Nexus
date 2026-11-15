@@ -77,6 +77,10 @@ internal static class SchwabJson
 
     public static string? Json(JsonElement obj, string name) => Property(obj, name)?.GetRawText();
 
+    /// <summary>A time market data sends as milliseconds since the Unix epoch.</summary>
+    public static DateTimeOffset? EpochMilliseconds(JsonElement obj, string name) =>
+        Int64(obj, name) is { } milliseconds ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds) : null;
+
     /// <summary>A time in the form Schwab's query parameters take, such as <c>2024-03-28T21:10:42.000Z</c>.</summary>
     public static string Format(DateTimeOffset time) =>
         time.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
