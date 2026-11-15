@@ -1,12 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
 
@@ -53,12 +50,9 @@ internal static class SignInFlow
         }
 
         using var http = new HttpClient();
-        var oauth = new SchwabSource(http).Spec.OAuth!;
+        var app = new OAuthClient(secrets[AppKey]!.Trim(), secrets[AppSecret]!.Trim());
         var state = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-        var authorize = string.Create(
-            CultureInfo.InvariantCulture,
-            $"{oauth.AuthorizeUrl}?response_type=code&client_id={Uri.EscapeDataString(secrets[AppKey]!.Trim())}"
-            + $"&redirect_uri={Uri.EscapeDataString(callbackText)}&state={state}");
+        var authorize = SchwabSignIn.AuthorizeUrl(app, callbackText, state).AbsoluteUri;
 
         using var certificate = CallbackListener.CreateCertificate();
         TcpListener listener;
@@ -106,41 +100,14 @@ internal static class SignInFlow
             return 1;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, oauth.TokenUrl)
+        OAuthTokens tokens;
+        try
         {
-            Headers =
-            {
-                Authorization = new AuthenticationHeaderValue(
-                    "Basic",
-                    Convert.ToBase64String(Encoding.UTF8.GetBytes(
-                        $"{Uri.EscapeDataString(secrets[AppKey]!.Trim())}:{Uri.EscapeDataString(secrets[AppSecret]!.Trim())}"))),
-            },
-            Content = new FormUrlEncodedContent(
-            [
-                new("grant_type", "authorization_code"),
-                new("code", code),
-                new("redirect_uri", callbackText),
-            ]),
-        };
-
-        using var response = await http.SendAsync(request, ct);
-        using var body = ParseOrNull(await response.Content.ReadAsStringAsync(ct));
-        var root = body?.RootElement ?? default;
-        if (!response.IsSuccessStatusCode)
-        {
-            var reason = Text(root, "error_description") ?? Text(root, "error") ?? "no reason given";
-            await Console.Error.WriteLineAsync(string.Create(
-                CultureInfo.InvariantCulture,
-                $"Schwab refused the sign-in ({(int)response.StatusCode}): {reason}."));
-            return 1;
+            tokens = await SchwabSignIn.ExchangeAsync(http, app, code, callbackText, ct: ct);
         }
-
-        if (Text(root, "access_token") is not { } access
-            || Text(root, "refresh_token") is not { } refresh
-            || !root.TryGetProperty("expires_in", out var lifetime)
-            || !lifetime.TryGetInt64(out var seconds))
+        catch (ConnectorException ex)
         {
-            await Console.Error.WriteLineAsync("Schwab's token response is missing a token or its lifetime.");
+            await Console.Error.WriteLineAsync(ex.Message);
             return 1;
         }
 
@@ -149,9 +116,9 @@ internal static class SignInFlow
             PathHelper.GetSecretsPathFromSecretsId(id),
             new Dictionary<string, string>
             {
-                [AccessToken] = access,
-                [RefreshToken] = refresh,
-                [ExpiresAt] = now.AddSeconds(seconds).ToString("O", CultureInfo.InvariantCulture),
+                [AccessToken] = tokens.AccessToken,
+                [RefreshToken] = tokens.RefreshToken!,
+                [ExpiresAt] = tokens.ExpiresAt!.Value.ToString("O", CultureInfo.InvariantCulture),
                 [SignedInAt] = now.ToString("O", CultureInfo.InvariantCulture),
             });
 
@@ -160,23 +127,6 @@ internal static class SignInFlow
             $"Signed in. The tokens are in user secrets {id}. Schwab ends this sign-in after 7 days, at {now.AddDays(7).ToLocalTime():f}."));
         return 0;
     }
-
-    private static JsonDocument? ParseOrNull(string text)
-    {
-        try
-        {
-            return JsonDocument.Parse(text);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string? Text(JsonElement root, string name) =>
-        root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
 
     private static bool TryOpen(string url)
     {

@@ -281,7 +281,9 @@ spec is `SchwabSource.Spec`.
 
 - Sign-in: authorize at `https://api.schwabapi.com/v1/oauth/authorize`, tokens from
   `https://api.schwabapi.com/v1/oauth/token`, no scopes. The host runs the redirect and passes the app key
-  and secret as `ConnectorConfig.Client`.
+  and secret as `ConnectorConfig.Client`. `SchwabSignIn.AuthorizeUrl` builds the sign-in page's address for a
+  callback and a `state`, and `SchwabSignIn.ExchangeAsync` trades the redirect's code for `OAuthTokens`, sending it
+  once. A refused code throws `AuthExpired`, and a refused app key `ConfigInvalid`.
 - The access token is refreshed with 5 minutes or less left, and on a 401, using HTTP Basic auth with the app
   key and secret. Schwab ends a sign-in after 7 days; the refresh then throws `AuthExpired`.
 - Every account linked to the sign-in is read. Requests address an account by the hash from
