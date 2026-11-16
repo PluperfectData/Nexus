@@ -26,8 +26,11 @@ public sealed class ConnectSession
 
     public required string ReturnUrl { get; set; }
 
-    /// <summary>The connection the page made, once it has made one.</summary>
+    /// <summary>The connection the page made, once it has made one, or the one it signs in again.</summary>
     public int? ConnectionId { get; set; }
+
+    /// <summary>Whether the page signs <see cref="ConnectionId"/> in again, in place of making a connection.</summary>
+    public bool Renews { get; set; }
 
     public Connection? Connection { get; set; }
 

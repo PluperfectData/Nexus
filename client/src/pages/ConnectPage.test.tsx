@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ApiError, cancelConnect, connectConnection, connectStreams, type ConnectView, finishConnect, getConnect } from '../api'
+import { ApiError, cancelConnect, connectConnection, connectSignIn, connectStreams, type ConnectView, finishConnect, getConnect } from '../api'
 import { leaveFor } from '../browser'
 import { ConnectPage } from './ConnectPage'
 
@@ -8,6 +8,7 @@ jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
   getConnect: jest.fn(),
   connectConnection: jest.fn(),
+  connectSignIn: jest.fn(),
   connectStreams: jest.fn(),
   finishConnect: jest.fn(),
   cancelConnect: jest.fn(),
@@ -31,6 +32,7 @@ const opened: ConnectView = {
   destinationUrl: 'http://localhost:6161/ingest',
   expiresAt: '2026-11-15T12:10:00Z',
   connection: null,
+  renewing: false,
 }
 
 const connected: ConnectView = {
@@ -41,6 +43,46 @@ const connected: ConnectView = {
 beforeEach(() => {
   jest.clearAllMocks()
   window.location.hash = '#nxc_the-token'
+})
+
+const schwab = {
+  id: 'schwab',
+  name: 'Charles Schwab',
+  description: 'Reads a Schwab sign-in.',
+  auth: 'OAuth',
+  fields: [{ name: 'startDate', label: 'Read history from (yyyy-MM-dd)', kind: 'Text' as const, required: true, choices: null, default: null }],
+}
+
+it("signs in to a provider's page in place of connecting, for a connector that signs in", async () => {
+  jest.mocked(getConnect).mockResolvedValue({ ...opened, connector: schwab })
+  jest.mocked(connectSignIn).mockResolvedValue({ url: 'https://api.schwabapi.com/v1/oauth/authorize?state=abc' })
+  render(<ConnectPage />)
+
+  await userEvent.type(await screen.findByLabelText('Name'), 'Brokerage')
+  await userEvent.type(screen.getByLabelText('Read history from (yyyy-MM-dd)'), '2026-01-01')
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in to Charles Schwab' }))
+
+  expect(connectSignIn).toHaveBeenCalledWith('nxc_the-token', 'Brokerage', { startDate: '2026-01-01' })
+  expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=abc')
+  expect(connectConnection).not.toHaveBeenCalled()
+})
+
+it('signs a connection in again, and shows why a sign-in that came back failed', async () => {
+  window.history.pushState({}, '', `/connect?error=${encodeURIComponent('Schwab did not sign you in: access_denied.')}#nxc_the-token`)
+  jest.mocked(getConnect).mockResolvedValue({ ...connected, connector: schwab, renewing: true })
+  jest.mocked(connectSignIn).mockResolvedValue({ url: 'https://api.schwabapi.com/v1/oauth/authorize?state=def' })
+  render(<ConnectPage />)
+
+  expect(await screen.findByText('Schwab did not sign you in: access_denied.')).toBeInTheDocument()
+  expect(window.location.search).toBe('')
+  expect(window.location.hash).toBe('#nxc_the-token')
+  const again = await screen.findByRole('button', { name: 'Sign in to Charles Schwab again' })
+  expect(screen.getByText('Schwab did not sign you in: access_denied.')).toBeInTheDocument()
+  expect(connectStreams).not.toHaveBeenCalled()
+  await userEvent.click(again)
+
+  expect(connectSignIn).toHaveBeenCalledWith('nxc_the-token', '', {})
+  expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=def')
 })
 
 it("uploads the file a CSV connector reads, starting from its settings' defaults", async () => {

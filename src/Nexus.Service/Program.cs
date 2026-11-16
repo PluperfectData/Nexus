@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Nexus;
 using Nexus.Push;
+using Nexus.Schwab;
 using Nexus.Service;
 using Nexus.Service.Auth;
 using Nexus.Service.Storage;
@@ -28,7 +29,13 @@ var secureOrigin = !builder.Environment.IsDevelopment();
 
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(SourceConnectors.Defaults());
+builder.Services.AddSingleton(builder.Configuration.GetSection(SchwabApp.Section).Get<SchwabApp>() ?? new SchwabApp());
+builder.Services.AddHttpClient(OAuthApps.SchwabHttpClient);
+builder.Services.AddSingleton<OAuthApps>();
+builder.Services.AddSingleton<SignIns>();
+builder.Services.AddSingleton(services => SourceConnectors.Defaults(new SchwabSource(
+    services.GetRequiredService<IHttpClientFactory>().CreateClient(OAuthApps.SchwabHttpClient),
+    services.GetRequiredService<TimeProvider>())));
 builder.Services.AddSingleton(new ConnectionFiles(Path.Combine(builder.Environment.ContentRootPath, settings.DataDirectory, "files")));
 builder.Services.AddSingleton(HttpRetryOptions.Default);
 builder.Services.AddSingleton(RetryPolicy.Default);

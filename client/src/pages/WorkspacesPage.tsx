@@ -1,16 +1,19 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { listWorkspaces, makeWorkspace, type Workspace } from '../api'
+import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
 
 /** The workspaces the user may see, and for an admin, a form to make one. */
 export function WorkspacesPage() {
   const { me } = useSession()
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // A sign-in the service lost track of comes back here with its reason.
+  const [error, setError] = useState<string | null>(() => arrivalQuery().get('error'))
   const [name, setName] = useState('')
 
   useEffect(() => {
+    clearQuery()
     listWorkspaces()
       .then(setWorkspaces)
       .catch((e: Error) => setError(e.message))

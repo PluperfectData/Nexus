@@ -9,7 +9,13 @@ namespace Nexus.Service;
 /// Adds a connection once its settings connect, for a workspace's members and for connect pages alike, and builds the
 /// config a connector reads a connection with.
 /// </summary>
-public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connectors, ConnectionFiles files, Secrets secrets, TimeProvider time)
+public sealed class ConnectionMaker(
+    NexusDbContext db,
+    SourceConnectors connectors,
+    ConnectionFiles files,
+    OAuthApps apps,
+    Secrets secrets,
+    TimeProvider time)
 {
     /// <summary>
     /// The connection made, or the reason none was. A connector that reads a file takes it as <paramref name="file"/>,
@@ -32,12 +38,62 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
         return (connection, problem);
     }
 
-    /// <summary>The config a connector reads the connection with: its settings, its tokens, and its file.</summary>
+    /// <summary>
+    /// The config a connector reads the connection with: its settings, its tokens, its file, and the app it refreshes
+    /// its tokens through.
+    /// </summary>
     public ConnectorConfig ConfigOf(Connection connection) =>
         new(
             secrets.Unprotect(connection.Settings),
             Tokens: secrets.UnprotectTokens(connection.Tokens),
-            Files: FilesOf(connectors.Find(connection.Connector), connection.FileName, connection.StoredFile));
+            Files: FilesOf(connectors.Find(connection.Connector), connection.FileName, connection.StoredFile),
+            Client: apps.ClientFor(connection.Connector));
+
+    /// <summary>
+    /// The name and settings a connection made by signing in would keep, checked before the person leaves for the
+    /// provider, or why it cannot be made.
+    /// </summary>
+    public (string Name, Dictionary<string, string?> Settings, string? Problem) CheckSignIn(
+        string? name,
+        string? connectorId,
+        IReadOnlyDictionary<string, string?>? given)
+    {
+        var (connector, trimmed, settings, problem) = Prepare(name, connectorId, given);
+        return connector is null ? (trimmed, settings, problem)
+            : connector.Spec.Auth != AuthKind.OAuth ? (trimmed, settings, $"{connector.Spec.DisplayName} takes no sign-in.")
+            : (trimmed, settings, problem ?? apps.ProblemFor(connector.Spec.Id));
+    }
+
+    /// <summary>Keeps a connection signed in to its provider, with the tokens the sign-in brought back.</summary>
+    public async Task<Connection> AddSignedInAsync(
+        int workspaceId,
+        string name,
+        string connectorId,
+        IReadOnlyDictionary<string, string?> settings,
+        OAuthTokens tokens,
+        CancellationToken ct)
+    {
+        var connection = new Connection
+        {
+            WorkspaceId = workspaceId,
+            Name = name,
+            Connector = connectorId,
+            Settings = secrets.Protect(settings),
+            Tokens = secrets.ProtectTokens(tokens),
+            CreatedAt = time.GetUtcNow().UtcDateTime,
+        };
+        db.Connections.Add(connection);
+        await db.SaveChangesAsync(ct);
+        return connection;
+    }
+
+    /// <summary>Keeps the tokens a new sign-in brought back, so the connection syncs again.</summary>
+    public async Task RenewAsync(Connection connection, OAuthTokens tokens, CancellationToken ct)
+    {
+        connection.Tokens = secrets.ProtectTokens(tokens);
+        connection.NeedsSignIn = false;
+        await db.SaveChangesAsync(ct);
+    }
 
     /// <summary>
     /// Replaces the connection's file with <paramref name="file"/> once the connector reads it, deleting the old copy.
@@ -69,7 +125,7 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
     /// <summary>The connection with every setting but its secrets, and the name of its file.</summary>
     public ConnectionView ViewOf(Connection connection)
     {
-        var shown = connectors.Find(connection.Connector)?.Spec.Fields
+        var shown = (connectors.Find(connection.Connector) is { } connector ? SourceConnectors.FieldsOf(connector) : null)?
             .Where(f => f.Kind is not (SettingKind.Secret or SettingKind.File))
             .Select(f => f.Name)
             .ToHashSet(StringComparer.Ordinal) ?? [];
@@ -106,15 +162,15 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
         UploadedFile? file,
         CancellationToken ct)
     {
-        var trimmed = name?.Trim() ?? string.Empty;
-        if (trimmed.Length is 0 or > Connection.MaxNameLength)
+        var (connector, trimmed, settings, problem) = Prepare(name, connectorId, given);
+        if (connector is null)
         {
-            return (null, $"A connection needs a name of {Connection.MaxNameLength} characters or fewer.");
+            return (null, problem);
         }
 
-        if (connectors.Find(connectorId ?? string.Empty) is not { } connector)
+        if (connector.Spec.Auth == AuthKind.OAuth)
         {
-            return (null, $"'{connectorId}' is not a connector the service reads.");
+            return (null, $"Sign in to {connector.Spec.DisplayName} to connect it.");
         }
 
         var fileField = SourceConnectors.FileFieldOf(connector);
@@ -128,13 +184,9 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
             return (null, $"{fileField.Label} is required.");
         }
 
-        given ??= new Dictionary<string, string?>();
-        var settings = connector.Spec.Fields.Where(field => field.Kind != SettingKind.File).ToDictionary(
-            field => field.Name,
-            field => given.TryGetValue(field.Name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null);
-        if (connector.Spec.Fields.FirstOrDefault(field => field.Required && field.Kind != SettingKind.File && settings[field.Name] is null) is { } missing)
+        if (problem is not null)
         {
-            return (null, $"{missing.Label} is required.");
+            return (null, problem);
         }
 
         var check = await connector.CheckAsync(new ConnectorConfig(settings, Files: FilesOf(connector, file?.FileName, file?.StoredFile)), ct);
@@ -156,6 +208,33 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
         db.Connections.Add(connection);
         await db.SaveChangesAsync(ct);
         return (connection, null);
+    }
+
+    // A new connection's trimmed name and its settings from the connector's fields, files aside, with the first problem
+    // found: a bad name or connector, or a required setting left out. The connector is null only for those first two.
+    private (ISourceConnector? Connector, string Name, Dictionary<string, string?> Settings, string? Problem) Prepare(
+        string? name,
+        string? connectorId,
+        IReadOnlyDictionary<string, string?>? given)
+    {
+        var trimmed = name?.Trim() ?? string.Empty;
+        if (trimmed.Length is 0 or > Connection.MaxNameLength)
+        {
+            return (null, trimmed, [], $"A connection needs a name of {Connection.MaxNameLength} characters or fewer.");
+        }
+
+        if (connectors.Find(connectorId ?? string.Empty) is not { } connector)
+        {
+            return (null, trimmed, [], $"'{connectorId}' is not a connector the service reads.");
+        }
+
+        given ??= new Dictionary<string, string?>();
+        var fields = SourceConnectors.FieldsOf(connector).Where(field => field.Kind != SettingKind.File).ToList();
+        var settings = fields.ToDictionary(
+            field => field.Name,
+            field => given.TryGetValue(field.Name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null);
+        var missing = fields.FirstOrDefault(field => field.Required && settings[field.Name] is null);
+        return (connector, trimmed, settings, missing is null ? null : $"{missing.Label} is required.");
     }
 
     private Dictionary<string, ConnectorFile>? FilesOf(ISourceConnector? connector, string? fileName, string? stored) =>

@@ -345,6 +345,12 @@
           "Nexus.Abstractions": "[1.0.0, )"
         }
       },
+      "nexus.schwab": {
+        "type": "Project",
+        "dependencies": {
+          "Nexus.Abstractions": "[1.0.0, )"
+        }
+      },
       "nexus.sql": {
         "type": "Project",
         "dependencies": {

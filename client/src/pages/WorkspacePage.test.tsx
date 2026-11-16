@@ -18,10 +18,13 @@ import {
   listUsers,
   makeApp,
   type Me,
+  renewSignIn,
   replaceConnectionFile,
   runSync,
+  startSignIn,
   type Sync,
 } from '../api'
+import { leaveFor } from '../browser'
 import { SessionContext } from '../session'
 import { WorkspacePage } from './WorkspacePage'
 
@@ -45,7 +48,11 @@ jest.mock('../api', () => ({
   editApp: jest.fn(),
   checkDestination: jest.fn(),
   replaceConnectionFile: jest.fn(),
+  startSignIn: jest.fn(),
+  renewSignIn: jest.fn(),
 }))
+
+jest.mock('../browser', () => ({ leaveFor: jest.fn() }))
 
 const member: Me = { signedIn: true, id: 2, email: 'member@acme.test', isAdmin: false, hasPassword: true }
 
@@ -375,4 +382,45 @@ it('lets an admin make an app and shows its key once', async () => {
   expect(screen.getByRole('button', { name: 'Copy key' })).toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Done' }))
   expect(screen.queryByLabelText("Reports's key")).not.toBeInTheDocument()
+})
+
+const schwabConnector = {
+  id: 'schwab',
+  name: 'Charles Schwab',
+  description: 'Reads a Schwab sign-in.',
+  auth: 'OAuth',
+  fields: [{ name: 'startDate', label: 'Read history from (yyyy-MM-dd)', kind: 'Text' as const, required: true, choices: null, default: null }],
+}
+
+it('signs in to a provider for a connector that signs in, and says so on coming back', async () => {
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  jest.mocked(startSignIn).mockResolvedValue({ url: 'https://api.schwabapi.com/v1/oauth/authorize?state=abc' })
+  window.history.pushState({}, '', '/workspaces/4?signedIn=9')
+  renderAs(member)
+
+  expect(await screen.findByText('Signed in. Its tables are added from its card below.')).toBeInTheDocument()
+  expect(window.location.search).toBe('')
+  await userEvent.click(screen.getByRole('button', { name: 'Add connection' }))
+  await userEvent.type(screen.getByLabelText('Name'), 'Brokerage')
+  await userEvent.type(screen.getByLabelText('Read history from (yyyy-MM-dd)'), '2026-01-01')
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in to Charles Schwab' }))
+
+  expect(startSignIn).toHaveBeenCalledWith(4, 'Brokerage', 'schwab', { startDate: '2026-01-01' })
+  expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=abc')
+  expect(addConnection).not.toHaveBeenCalled()
+})
+
+it('signs a connection in again once its provider ends its sign-in, and shows why one failed', async () => {
+  window.history.pushState({}, '', `/workspaces/4?error=${encodeURIComponent('Schwab refused the sign-in (400): Bad code.')}`)
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  jest.mocked(listConnections).mockResolvedValue([{ ...shop, connector: 'schwab', settings: { startDate: '2026-01-01' }, needsSignIn: true }])
+  jest.mocked(renewSignIn).mockResolvedValue({ url: 'https://api.schwabapi.com/v1/oauth/authorize?state=def' })
+  renderAs(member)
+
+  expect(await screen.findByText('Schwab refused the sign-in (400): Bad code.')).toBeInTheDocument()
+  const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+  await userEvent.click(within(card).getByRole('button', { name: 'Sign in again' }))
+
+  expect(renewSignIn).toHaveBeenCalledWith(9)
+  expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=def')
 })

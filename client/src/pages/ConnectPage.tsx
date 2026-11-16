@@ -1,8 +1,9 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { cancelConnect, connectConnection, connectStreams, type ConnectView, finishConnect, getConnect, type Stream } from '../api'
+import { cancelConnect, connectConnection, connectSignIn, connectStreams, type ConnectView, finishConnect, getConnect, type Stream } from '../api'
 import { leaveFor } from '../browser'
 import { FieldInput } from '../components/FieldInput'
 import { defaultsOf } from '../fields'
+import { arrivalQuery, clearQuery } from '../query'
 import { StreamPicks } from '../components/StreamPicks'
 import { initialPicks, type Pick, picked } from '../streams'
 
@@ -13,13 +14,16 @@ import { initialPicks, type Pick, picked } from '../streams'
 export function ConnectPage() {
   const [token] = useState(() => window.location.hash.slice(1))
   const [view, setView] = useState<ConnectView | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // A sign-in that failed comes back to the page with its reason.
+  const [error, setError] = useState<string | null>(() => arrivalQuery().get('error'))
   const [name, setName] = useState('')
   const [values, setValues] = useState<Record<string, string>>({})
   const [file, setFile] = useState<File | null>(null)
   const [streams, setStreams] = useState<Stream[] | null>(null)
   const [picks, setPicks] = useState<Record<string, Pick>>({})
   const [busy, setBusy] = useState(false)
+
+  useEffect(clearQuery, [])
 
   useEffect(() => {
     getConnect(token)
@@ -30,7 +34,7 @@ export function ConnectPage() {
       .catch((e: Error) => setError(e.message))
   }, [token])
 
-  const connected = view?.connection != null
+  const connected = view?.connection != null && !view.renewing
   useEffect(() => {
     if (!connected) return
     connectStreams(token)
@@ -53,9 +57,14 @@ export function ConnectPage() {
     }
   }
 
+  const signsIn = view?.connector.auth === 'OAuth'
+
   function connect(event: FormEvent) {
     event.preventDefault()
-    void act(async () => setView(await connectConnection(token, name.trim(), values, file ?? undefined)))
+    void act(async () => {
+      if (signsIn) leaveFor((await connectSignIn(token, name.trim(), values)).url)
+      else setView(await connectConnection(token, name.trim(), values, file ?? undefined))
+    })
   }
 
   function finish(event: FormEvent) {
@@ -80,7 +89,23 @@ export function ConnectPage() {
         {new Date(view.expiresAt).toLocaleTimeString()}.
       </p>
 
-      {view.connection === null ? (
+      {view.renewing ? (
+        <div className="form stacked">
+          <p>
+            {view.connector.name} ended the sign-in that <strong>{view.connection?.name}</strong> reads with. Sign in again to keep it
+            syncing.
+          </p>
+          {error && <p className="error">{error}</p>}
+          <div className="form-actions">
+            <button type="button" disabled={busy} onClick={() => act(async () => leaveFor((await connectSignIn(token, '', {})).url))}>
+              {busy ? 'Starting…' : `Sign in to ${view.connector.name} again`}
+            </button>
+            <button type="button" className="quiet" onClick={cancel} disabled={busy}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : view.connection === null ? (
         <form className="form stacked" onSubmit={connect}>
           <p className="muted">{view.connector.description}</p>
           <label>
@@ -99,7 +124,7 @@ export function ConnectPage() {
           {error && <p className="error">{error}</p>}
           <div className="form-actions">
             <button type="submit" disabled={busy}>
-              {busy ? 'Connecting…' : 'Connect'}
+              {busy ? 'Connecting…' : signsIn ? `Sign in to ${view.connector.name}` : 'Connect'}
             </button>
             <button type="button" className="quiet" onClick={cancel} disabled={busy}>
               Cancel

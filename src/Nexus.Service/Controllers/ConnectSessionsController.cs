@@ -7,7 +7,8 @@ using Nexus.Service.Storage;
 
 namespace Nexus.Service.Controllers;
 
-public sealed record ConnectSessionRequest(string? Connector, int DestinationId, string? ReturnUrl);
+/// <summary>A connect page to open. With <paramref name="ConnectionId"/>, the page signs that connection in again.</summary>
+public sealed record ConnectSessionRequest(string? Connector, int DestinationId, string? ReturnUrl, int? ConnectionId = null);
 
 /// <summary>A connect page's address, with its token after the <c>#</c>, and when it expires.</summary>
 public sealed record ConnectSessionView(string Url, DateTime ExpiresAt);
@@ -22,7 +23,16 @@ public sealed class ConnectSessionsController(NexusDbContext db, SourceConnector
     public async Task<ActionResult<ConnectSessionView>> Open(ConnectSessionRequest request, CancellationToken ct)
     {
         var app = await db.Apps.SingleAsync(a => a.Id == User.AppId(), ct);
-        if (connectors.Find(request.Connector ?? string.Empty) is null)
+        Connection? renewed = null;
+        if (request.ConnectionId is { } connectionId)
+        {
+            renewed = await db.Connections.FirstOrDefaultAsync(c => c.Id == connectionId && c.WorkspaceId == app.WorkspaceId, ct);
+            if (renewed is null || connectors.Find(renewed.Connector)?.Spec.Auth != AuthKind.OAuth)
+            {
+                return Problem("Pick a connection in this app's workspace that signs in.", statusCode: StatusCodes.Status400BadRequest);
+            }
+        }
+        else if (connectors.Find(request.Connector ?? string.Empty) is null)
         {
             return Problem($"'{request.Connector}' is not a connector the service reads.", statusCode: StatusCodes.Status400BadRequest);
         }
@@ -47,8 +57,10 @@ public sealed class ConnectSessionsController(NexusDbContext db, SourceConnector
             TokenHash = hash,
             AppId = app.Id,
             DestinationId = request.DestinationId,
-            Connector = request.Connector!,
+            Connector = renewed?.Connector ?? request.Connector!,
             ReturnUrl = request.ReturnUrl,
+            ConnectionId = renewed?.Id,
+            Renews = renewed is not null,
             CreatedAt = now,
             ExpiresAt = now + ConnectSession.Lifetime,
         };

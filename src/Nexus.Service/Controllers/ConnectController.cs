@@ -7,14 +7,23 @@ using Pluperfect.Jwt;
 
 namespace Nexus.Service.Controllers;
 
-/// <summary>What a connect page shows: who asked, the connector and its settings, and the connection once made.</summary>
+/// <summary>
+/// What a connect page shows: who asked, the connector and its settings, and the connection once made.
+/// <paramref name="Renewing"/> says the page signs <paramref name="Connection"/> in again.
+/// </summary>
 public sealed record ConnectView(
     string AppName,
     string WorkspaceName,
     ConnectorView Connector,
     string DestinationUrl,
     DateTime ExpiresAt,
-    ConnectionView? Connection);
+    ConnectionView? Connection,
+    bool Renewing);
+
+public sealed record ConnectSignInRequest(string? Name, IReadOnlyDictionary<string, string?>? Settings);
+
+/// <summary>The provider's sign-in page, for the browser to go to.</summary>
+public sealed record SignInPage(string Url);
 
 public sealed record ConnectConnectionRequest(string? Name, IReadOnlyDictionary<string, string?>? Settings);
 
@@ -37,6 +46,8 @@ public sealed class ConnectController(
     ConnectionMaker connections,
     ConnectionFiles files,
     SyncMaker syncs,
+    OAuthApps apps,
+    SignIns signIns,
     TimeProvider time) : ControllerBase
 {
     private const string Ended = "This connect page has expired or is finished. Go back to the app and start again.";
@@ -96,6 +107,47 @@ public sealed class ConnectController(
         session.Connection = connection;
         await db.SaveChangesAsync(ct);
         return View(session);
+    }
+
+    /// <summary>
+    /// Starts the page's sign-in to the connector's provider, for a new connection from the name and settings given, or
+    /// for the connection the page signs in again. Answers the provider's sign-in page.
+    /// </summary>
+    [HttpPost("sign-in")]
+    public async Task<ActionResult<SignInPage>> SignIn(ConnectSignInRequest request, CancellationToken ct)
+    {
+        if (await SessionAsync(ct) is not { } session)
+        {
+            return Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var token = Request.Headers.Authorization.ToString()["Bearer ".Length..].Trim();
+        PendingSignIn pending;
+        if (session.Renews)
+        {
+            if (apps.ProblemFor(session.Connector) is { } missing)
+            {
+                return Problem(missing, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            pending = new PendingSignIn(session.Connector, session.App!.WorkspaceId, null, null, session.ConnectionId, session.Id, token);
+        }
+        else if (session.ConnectionId is not null)
+        {
+            return Problem("This page has made its connection. Pick its streams next.", statusCode: StatusCodes.Status409Conflict);
+        }
+        else
+        {
+            var (name, settings, problem) = connections.CheckSignIn(request.Name, session.Connector, request.Settings);
+            if (problem is not null)
+            {
+                return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            pending = new PendingSignIn(session.Connector, session.App!.WorkspaceId, name, settings, null, session.Id, token);
+        }
+
+        return new SignInPage(apps.SignInPage(session.Connector, signIns.Start(pending)).ToString());
     }
 
     [HttpGet("streams")]
@@ -175,10 +227,12 @@ public sealed class ConnectController(
             ConnectorView.Of(connector),
             session.Destination!.Url,
             session.ExpiresAt,
-            session.Connection is { } connection ? connections.ViewOf(connection) : null);
+            session.Connection is { } connection ? connections.ViewOf(connection) : null,
+            session.Renews);
     }
 
-    private static string ReturnTo(ConnectSession session, string key, string value)
+    /// <summary>The app's return address for the session, with one more query value.</summary>
+    internal static string ReturnTo(ConnectSession session, string key, string value)
     {
         var join = session.ReturnUrl.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return $"{session.ReturnUrl}{join}{key}={Uri.EscapeDataString(value)}";

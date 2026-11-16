@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Nexus.MySql\Nexus.MySql.csproj" />
     <ProjectReference Include="..\Nexus.Postgres\Nexus.Postgres.csproj" />
     <ProjectReference Include="..\Nexus.Push\Nexus.Push.csproj" />
+    <ProjectReference Include="..\Nexus.Schwab\Nexus.Schwab.csproj" />
     <ProjectReference Include="..\Nexus.SqlServer\Nexus.SqlServer.csproj" />
   </ItemGroup>
 

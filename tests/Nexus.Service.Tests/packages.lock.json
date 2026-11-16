@@ -684,6 +684,12 @@
           "Nexus.Abstractions": "[1.0.0, )"
         }
       },
+      "nexus.schwab": {
+        "type": "Project",
+        "dependencies": {
+          "Nexus.Abstractions": "[1.0.0, )"
+        }
+      },
       "nexus.service": {
         "type": "Project",
         "dependencies": {
@@ -694,6 +700,7 @@
           "Nexus.MySql": "[1.0.0, )",
           "Nexus.Postgres": "[1.0.0, )",
           "Nexus.Push": "[1.0.0, )",
+          "Nexus.Schwab": "[1.0.0, )",
           "Nexus.SqlServer": "[1.0.0, )",
           "Pluperfect.Jwt": "[1.0.0, )",
           "Pluperfect.Mail": "[1.0.0, )",

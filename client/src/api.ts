@@ -248,6 +248,13 @@ export function replaceConnectionFile(id: number, file: File) {
   form.append('file', file)
   return formRequest<Connection>(`/connections/${id}/file`, 'PUT', form)
 }
+/** Starts a sign-in to the connector's provider for a new connection, and answers the provider's sign-in page. */
+export const startSignIn = (workspaceId: number, name: string, connector: string, settings: Record<string, string>) =>
+  request<{ url: string }>(`/workspaces/${workspaceId}/sign-ins`, 'POST', { name, connector, settings })
+
+/** Starts a new sign-in for a connection whose provider ended its last one. */
+export const renewSignIn = (id: number) => request<{ url: string }>(`/connections/${id}/sign-in`, 'POST')
+
 export const removeConnection = (id: number) => request<null>(`/connections/${id}`, 'DELETE')
 export const listStreams = (connectionId: number) => request<Stream[]>(`/connections/${connectionId}/streams`)
 
@@ -266,6 +273,8 @@ export interface ConnectView {
   destinationUrl: string
   expiresAt: string
   connection: Connection | null
+  /** Whether the page signs `connection` in again, in place of making one. */
+  renewing: boolean
 }
 
 export interface Pairing {
@@ -291,6 +300,8 @@ export const connectConnection = (token: string, name: string, settings: Record<
 export const connectStreams = (token: string) => connectRequest<Stream[]>(token, '/connect/streams')
 export const finishConnect = (token: string, streams: SyncPick[]) =>
   connectRequest<{ returnUrl: string }>(token, '/connect/syncs', 'POST', { streams })
+export const connectSignIn = (token: string, name: string, settings: Record<string, string>) =>
+  connectRequest<{ url: string }>(token, '/connect/sign-in', 'POST', { name, settings })
 export const cancelConnect = (token: string) => connectRequest<{ returnUrl: string }>(token, '/connect/cancel', 'POST')
 
 /** A stream's name as a table name a destination such as Scry takes: lower case, with underscores for the rest. */

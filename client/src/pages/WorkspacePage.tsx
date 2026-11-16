@@ -13,6 +13,7 @@ import {
   removeConnection,
   removeSync,
   removeWorkspace,
+  renewSignIn,
   replaceConnectionFile,
   runSync,
   type Sync,
@@ -21,6 +22,8 @@ import {
 import { AppsSection } from '../components/AppsSection'
 import { ConnectionsSection } from '../components/ConnectionsSection'
 import { MembersSection } from '../components/MembersSection'
+import { leaveFor } from '../browser'
+import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
 
 // How often the page asks again while a sync is queued or running.
@@ -38,7 +41,12 @@ export function WorkspacePage() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [apps, setApps] = useState<App[]>([])
   const [syncs, setSyncs] = useState<Sync[]>([])
-  const [error, setError] = useState<string | null>(null)
+  // A sign-in to a provider comes back here with the connection it made or renewed, or with why it failed.
+  const [arrival] = useState(arrivalQuery)
+  const [error, setError] = useState<string | null>(() => arrival.get('error'))
+  const notice = arrival.has('signedIn') ? 'Signed in. Its tables are added from its card below.' : null
+
+  useEffect(clearQuery, [])
 
   useEffect(() => {
     Promise.all([getWorkspace(id), listConnectors(), listConnections(id), listApps(id), listSyncs(id)])
@@ -95,6 +103,7 @@ export function WorkspacePage() {
           </button>
         )}
       </div>
+      {notice && <p className="success">{notice}</p>}
       {error && <p className="error">{error}</p>}
 
       <ConnectionsSection
@@ -125,6 +134,7 @@ export function WorkspacePage() {
           const saved = await editSync(sync.id, edit)
           setSyncs((current) => current.map((s) => (s.id === saved.id ? saved : s)))
         }}
+        onSignInAgain={(connection) => act(async () => leaveFor((await renewSignIn(connection.id)).url))}
         onReplaceFile={(connection, file) => act(async () => {
           const replaced = await replaceConnectionFile(connection.id, file)
           setConnections((current) => current.map((c) => (c.id === replaced.id ? replaced : c)))

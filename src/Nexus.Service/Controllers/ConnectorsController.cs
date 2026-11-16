@@ -14,7 +14,7 @@ public sealed record ConnectorView(string Id, string Name, string Description, A
             connector.Spec.DisplayName,
             connector.Spec.Description,
             connector.Spec.Auth,
-            [.. connector.Spec.Fields.Select(f => new FieldView(f.Name, f.Label, f.Kind, f.Required, f.Choices, f.Default))]);
+            [.. SourceConnectors.FieldsOf(connector).Select(f => new FieldView(f.Name, f.Label, f.Kind, f.Required, f.Choices, f.Default))]);
 }
 
 /// <summary>The connectors the service reads through, with the settings each asks for, for signed-in users and apps.</summary>

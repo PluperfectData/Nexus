@@ -1,5 +1,6 @@
 import { type FormEvent, useRef, useState } from 'react'
-import { addConnection, type App, type Connection, type Connector, type Sync, type SyncEdit } from '../api'
+import { addConnection, type App, type Connection, type Connector, startSignIn, type Sync, type SyncEdit } from '../api'
+import { leaveFor } from '../browser'
 import { placesOf } from '../places'
 import { defaultsOf } from '../fields'
 import { FieldInput } from './FieldInput'
@@ -49,11 +50,17 @@ function ConnectionForm({
   const connector = connectors.find((c) => c.id === connectorId)
   const fields = connector?.fields ?? []
 
+  const signsIn = connector?.auth === 'OAuth'
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
+      if (signsIn) {
+        leaveFor((await startSignIn(workspaceId, name.trim(), connectorId, values)).url)
+        return
+      }
       onAdded(await addConnection(workspaceId, name.trim(), connectorId, values, file ?? undefined))
     } catch (e) {
       setError((e as Error).message)
@@ -98,7 +105,7 @@ function ConnectionForm({
       {error && <p className="error wide">{error}</p>}
       <div className="form-actions wide">
         <button type="submit" disabled={busy}>
-          {busy ? 'Connecting…' : 'Add connection'}
+          {busy ? 'Connecting…' : signsIn ? `Sign in to ${connector?.name}` : 'Add connection'}
         </button>
         <button type="button" className="quiet" onClick={onCancel}>
           Cancel
@@ -125,6 +132,7 @@ export function ConnectionsSection({
   onRemoveSync,
   onEditSync,
   onReplaceFile,
+  onSignInAgain,
 }: {
   workspaceId: number
   connectors: Connector[]
@@ -134,6 +142,7 @@ export function ConnectionsSection({
   onAdded: (connection: Connection) => void
   onRemove: (connection: Connection) => void
   onReplaceFile: (connection: Connection, file: File) => void
+  onSignInAgain: (connection: Connection) => void
   onSyncsAdded: (syncs: Sync[]) => void
   onRunSync: (sync: Sync) => void
   onRemoveSync: (sync: Sync) => void
@@ -184,6 +193,11 @@ export function ConnectionsSection({
                   {connection.needsSignIn && <p className="error">It needs a new sign-in.</p>}
                 </div>
                 <div className="row-actions">
+                  {connection.needsSignIn && (
+                    <button type="button" className="secondary" onClick={() => onSignInAgain(connection)}>
+                      Sign in again
+                    </button>
+                  )}
                   {connection.fileName && <ReplaceFile connection={connection} onPick={(file) => onReplaceFile(connection, file)} />}
                   <button type="button" className="quiet" onClick={() => onRemove(connection)}>
                     Remove

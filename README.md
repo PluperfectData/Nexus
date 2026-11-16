@@ -461,6 +461,13 @@ database of its own, and runs each sync by reading its stream through a source c
 through `PushDestination`. It reads through the MySQL, PostgreSQL, SQL Server, and CSV sources. `client/` holds its
 pages.
 
+- A connection whose connector signs in, such as Schwab, is made by signing in. The sign-in starts from the
+  workspace page (`POST /workspaces/{id}/sign-ins` with `{name, connector, settings}`), from a connect page
+  (`POST /connect/sign-in` with `{name, settings}`), or to renew a connection (`POST /connections/{id}/sign-in`),
+  and each answers the provider's sign-in page. The provider sends the browser back to `GET /oauth/callback`,
+  which keeps the tokens, encrypted, and sends it on: to the connect page to pick streams, to the workspace page
+  with `?signedIn=`, or with `?error=` and the reason. Schwab's setting that allows orders is never offered,
+  since the service only reads.
 - A connection whose connector reads a file, such as CSV, is made from a `multipart/form-data` upload: `name`,
   `connector`, `settings` as a JSON object of text, and `file`, up to 1 GB. The file is kept in `data/files` as the
   connection's own copy, kept only once the connector reads it, and deleted with the connection.
@@ -537,7 +544,7 @@ syncs into its own app's destinations.
 | `GET /app` | The app itself: its name, its workspace, its destinations with their ids, and its return addresses |
 | `DELETE /app/key` | Revokes the app's own key, as an app does when it unlinks |
 | `GET /connectors` | The connectors and the settings each asks for |
-| `POST /connect-sessions` | From `{"connector", "destinationId", "returnUrl"}`, opens a connect page and answers its address. The destination must be the app's, and the return address one an admin added to the app. |
+| `POST /connect-sessions` | From `{"connector", "destinationId", "returnUrl"}`, opens a connect page and answers its address. The destination must be the app's, and the return address one an admin added to the app. With `connectionId`, a connection in the app's workspace that signs in, the page signs it in again and returns with `?connection=`. |
 | `GET /syncs` | The app's syncs, each with how its last run went and whether its connection needs a new sign-in |
 | `POST /syncs/{id}/run`, `DELETE /syncs/{id}` | Runs one of the app's syncs now, or removes it |
 
@@ -576,6 +583,19 @@ npm run dev --prefix client
 The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` beside `Pluperfect.Data`, and
 the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pluperfect.Jwt/client` once with
 `npm run build` before installing the client.
+
+To sign in to Schwab, the service needs the Schwab app's key and secret as user secrets, and the app's
+callback, `https://127.0.0.1:6164/oauth/callback`, registered on the app as its own entry. The service serves
+that callback on `https://127.0.0.1:6164` beside `http://localhost:6163`; another address goes in
+`Nexus:Schwab:CallbackUrl`.
+
+```bash
+dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project src/Nexus.Service
+```
+
+```bash
+dotnet user-secrets set Nexus:Schwab:AppSecret "<app secret>" --project src/Nexus.Service
+```
 
 To make or restore an admin, such as when every admin is locked out, run the service with `add-admin`. It
 prints a link that signs them in once, within an hour, and exits.

@@ -42,6 +42,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     internal FakePush Push { get; } = new();
 
+    internal FakeSchwab Schwab { get; } = new();
+
     // Every context opens its own connection, since the worker runs beside the tests. Without pooling, no connection
     // holds the file open once its context is done, so the directory can be deleted.
     private string SqliteConnectionString => $"Data Source={Path.Combine(DataDirectory, "nexus.db")};Pooling=False";
@@ -92,6 +94,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.ClientOrigin)}", ClientOrigin);
         builder.UseSetting("Mail:PickupDirectory", MailDirectory);
+        builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppKey)}", "app-key");
+        builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}", "app-secret");
 
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>
@@ -100,7 +104,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<NexusDbContext>>();
             services.AddDbContext<NexusDbContext>(options => options.UseSqlite(SqliteConnectionString));
             services.RemoveAll<SourceConnectors>();
-            services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource()]));
+            services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource(), new Nexus.Schwab.SchwabSource(new HttpClient(Schwab))]));
+            services.AddHttpClient(OAuthApps.SchwabHttpClient).ConfigurePrimaryHttpMessageHandler(() => Schwab);
             services.RemoveAll<HttpRetryOptions>();
             services.AddSingleton(new HttpRetryOptions { MaxAttempts = 1 });
             services.RemoveAll<RetryPolicy>();

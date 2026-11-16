@@ -97,6 +97,9 @@ namespace Nexus.Service.Storage.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<bool>("Renews")
+                        .HasColumnType("tinyint(1)");
+
                     b.Property<string>("ReturnUrl")
                         .IsRequired()
                         .HasMaxLength(2000)
