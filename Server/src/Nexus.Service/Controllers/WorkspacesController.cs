@@ -17,7 +17,7 @@ public sealed record WorkspaceRequest(string? Name);
 /// <summary>Workspaces: every one for an admin, and a member's own for a member. Admins make, rename, and remove them, and choose their members.</summary>
 [ApiController]
 [Route("workspaces")]
-public sealed class WorkspacesController(NexusDbContext db, Access access, ConnectionFiles files, TimeProvider time) : ControllerBase
+public sealed class WorkspacesController(NexusDbContext db, Access access, ConnectionFiles files, OperatorLog log, TimeProvider time) : ControllerBase
 {
     [HttpGet]
     public async Task<IEnumerable<WorkspaceView>> List(CancellationToken ct)
@@ -51,6 +51,7 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
 
         var workspace = new Workspace { Name = name, CreatedAt = time.GetUtcNow().UtcDateTime };
         db.Workspaces.Add(workspace);
+        log.Info($"Workspace {name} was made.", LogPlace.In(workspace));
         await db.SaveChangesAsync(ct);
         return StatusCode(StatusCodes.Status201Created, await DetailAsync(workspace.Id, ct));
     }
@@ -69,6 +70,11 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
             return Problem($"A workspace needs a name of {Workspace.MaxNameLength} characters or fewer.", statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (workspace.Name != name)
+        {
+            log.Info($"Workspace {workspace.Name} was renamed {name}.", LogPlace.In(workspace.Id));
+        }
+
         workspace.Name = name;
         await db.SaveChangesAsync(ct);
         return await DetailAsync(id, ct);
@@ -84,6 +90,11 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
             return Problem("A sync in this workspace is running. Wait for it to end, then remove the workspace.", statusCode: StatusCodes.Status409Conflict);
         }
 
+        if (await db.Workspaces.AsNoTracking().FirstOrDefaultAsync(w => w.Id == id, ct) is not { } workspace)
+        {
+            return NotFound();
+        }
+
         var stored = await db.Connections.Where(c => c.WorkspaceId == id && c.StoredFile != null).Select(c => c.StoredFile).ToListAsync(ct);
         if (await db.Workspaces.Where(w => w.Id == id).ExecuteDeleteAsync(ct) == 0)
         {
@@ -91,6 +102,8 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
         }
 
         stored.ForEach(files.Delete);
+        log.Info($"Workspace {workspace.Name} was removed, with its apps, connections, and syncs. The tables at each destination stay.", LogPlace.Instance);
+        await db.SaveChangesAsync(ct);
         return NoContent();
     }
 
@@ -98,7 +111,9 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
     [Authorize(Policy = NexusClaims.AdminPolicy)]
     public async Task<ActionResult<WorkspaceDetail>> AddMember(int id, int userId, CancellationToken ct)
     {
-        if (!await db.Workspaces.AnyAsync(w => w.Id == id, ct) || !await db.Users.AnyAsync(u => u.Id == userId, ct))
+        var workspace = await db.Workspaces.FirstOrDefaultAsync(w => w.Id == id, ct);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (workspace is null || user is null)
         {
             return NotFound();
         }
@@ -106,6 +121,7 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
         if (!await db.WorkspaceMembers.AnyAsync(m => m.WorkspaceId == id && m.UserId == userId, ct))
         {
             db.WorkspaceMembers.Add(new WorkspaceMember { WorkspaceId = id, UserId = userId });
+            log.Info($"{user.Email} was added to workspace {workspace.Name}.", LogPlace.In(id));
             await db.SaveChangesAsync(ct);
         }
 
@@ -116,12 +132,18 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, Conne
     [Authorize(Policy = NexusClaims.AdminPolicy)]
     public async Task<ActionResult<WorkspaceDetail>> RemoveMember(int id, int userId, CancellationToken ct)
     {
-        if (!await db.Workspaces.AnyAsync(w => w.Id == id, ct))
+        if (await db.Workspaces.FirstOrDefaultAsync(w => w.Id == id, ct) is not { } workspace)
         {
             return NotFound();
         }
 
-        await db.WorkspaceMembers.Where(m => m.WorkspaceId == id && m.UserId == userId).ExecuteDeleteAsync(ct);
+        var email = await db.Users.Where(u => u.Id == userId).Select(u => u.Email).FirstOrDefaultAsync(ct);
+        if (await db.WorkspaceMembers.Where(m => m.WorkspaceId == id && m.UserId == userId).ExecuteDeleteAsync(ct) > 0)
+        {
+            log.Info($"{email} was taken out of workspace {workspace.Name}.", LogPlace.In(id));
+            await db.SaveChangesAsync(ct);
+        }
+
         return await DetailAsync(id, ct);
     }
 

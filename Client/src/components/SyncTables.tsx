@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { addSyncs, type Connection, listStreams, type Stream, type Sync, type SyncEdit, type SyncMode } from '../api'
 import { type Place, placeLabel, targetOf } from '../places'
 import { initialPicks, MODES, type Pick, picked } from '../streams'
@@ -251,6 +252,9 @@ function SyncRow({
           <button type="button" className="secondary" disabled={busy} aria-expanded={editing} onClick={() => setEditing(!editing)}>
             Edit
           </button>
+          <Link to={`/log?sync=${sync.id}`} className="row-link" aria-label={`Log for sync ${sync.table}`}>
+            Log
+          </Link>
           <button type="button" className="quiet" disabled={sync.status === 'Running'} onClick={() => onRemove(sync)}>
             Remove
           </button>

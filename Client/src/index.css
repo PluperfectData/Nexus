@@ -9,6 +9,7 @@
   --accent: #2563eb;
   --accent-text: #ffffff;
   --error: #e11d48;
+  --warning: #b45309;
   --success: #059669;
   --header-bg: #2563eb;
   --header-text: #ffffff;
@@ -31,6 +32,7 @@
   --accent: #7c93c9;
   --accent-text: #0a0a0a;
   --error: #c98a94;
+  --warning: #d4b06a;
   --success: #7fb59a;
   --header-bg: #1b2438;
   --header-text: #e5e5e5;
@@ -174,8 +176,8 @@ p {
   display: none;
 }
 
-/* The two links, the brand, and the header's buttons run out of room near 25rem. */
-@media (max-width: 28rem) {
+/* An admin's four links, the brand, and the header's buttons run out of room near 33rem. */
+@media (max-width: 36rem) {
   .nav-toggle {
     display: inline-flex;
   }
@@ -451,7 +453,13 @@ button.quiet {
 .row-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+
+/* A link among a row's buttons, padded to line up with them. */
+.row-link {
+  padding: 0.25rem 0.5rem;
 }
 
 .sublist {
@@ -507,4 +515,47 @@ button.quiet {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
   align-items: end;
   gap: 0.5rem;
+}
+
+.log-filters {
+  margin-top: 0;
+}
+
+.list.log > li {
+  display: block;
+}
+
+.log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* The word and the icon say the level; the color only repeats them. */
+.level {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.level svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.log-entry.warning .level {
+  color: var(--warning);
+}
+
+.log-entry.error .level {
+  color: var(--error);
+}
+
+.log-text {
+  margin: 0.25rem 0 0;
 }

@@ -97,7 +97,7 @@ public sealed class ConnectController(
             return Problem("This page has made its connection. Pick its streams next.", statusCode: StatusCodes.Status409Conflict);
         }
 
-        var (connection, problem) = await connections.AddAsync(session.App!.WorkspaceId, name, session.Connector, settings, file, ct);
+        var (connection, problem) = await connections.AddAsync(session.App!.WorkspaceId, name, session.Connector, settings, file, session.App.Name, ct);
         if (connection is null)
         {
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
@@ -172,7 +172,7 @@ public sealed class ConnectController(
             return Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
         }
 
-        var (made, problem) = await syncs.AddAsync(connection, session.Destination!, request.Streams, ct);
+        var (made, problem) = await syncs.AddAsync(connection, session.Destination!, request.Streams, session.App!.Name, ct);
         if (made is null)
         {
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);

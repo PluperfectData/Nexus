@@ -4,7 +4,8 @@ using System.Text.Json;
 namespace Nexus.Service.Tests;
 
 // One stream of orders keyed by id. An incremental read starts at the saved cursor, sending that row again, as SQL
-// sources commonly do. Each read first throws the next queued failure, if any, and sends the queued tokens, if any.
+// sources commonly do. Each read first throws the next queued failure, if any, and sends the queued tokens, if any,
+// then its log lines after the schema.
 internal sealed class FakeSource : ISourceConnector
 {
     public const string Id = "fake";
@@ -31,7 +32,9 @@ internal sealed class FakeSource : ISourceConnector
 
     public List<object?[]> Rows { get; } = [];
 
-    public Queue<ConnectorException> Failures { get; } = [];
+    public Queue<Exception> Failures { get; } = [];
+
+    public List<LogMessage> Notes { get; } = [];
 
     public OAuthTokens? Refreshed { get; set; }
 
@@ -64,6 +67,11 @@ internal sealed class FakeSource : ISourceConnector
         var from = request.State is { } state && state.TryGetValue(StreamName, out var saved) ? saved.GetProperty("cursor").GetInt64() : 0;
         var rows = Rows.Where(row => (long)row[0]! >= from).ToList();
         yield return new SchemaMessage(Orders);
+        foreach (var note in Notes)
+        {
+            yield return note;
+        }
+
         if (rows.Count > 0)
         {
             yield return new RecordBatch(StreamName, rows);

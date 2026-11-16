@@ -51,6 +51,7 @@ export function Layout() {
           { to: '/settings', label: 'Settings' },
         ]
       : []),
+    { to: '/log', label: 'Log' },
   ]
 
   return (

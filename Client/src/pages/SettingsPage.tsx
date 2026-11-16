@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { type DatabaseForm, getInstall, getSettings, saveDatabase, type Settings } from '../api'
+import { type DatabaseForm, getInstall, getSettings, saveDatabase, saveLogDays, type Settings } from '../api'
 import { AddressesForm, DatabaseFields, MailForm } from '../components/InstanceForms'
 import { useSession } from '../session'
 
@@ -63,8 +63,55 @@ export function SettingsPage() {
               </>
             )}
           </section>
+          <section>
+            <h2>Log</h2>
+            <LogDaysForm settings={settings} onSaved={setSettings} />
+          </section>
         </>
       )}
     </div>
+  )
+}
+
+/** How many days the Log page keeps an entry. */
+function LogDaysForm({ settings, onSaved }: { settings: Settings; onSaved: (settings: Settings) => void }) {
+  const [days, setDays] = useState(String(settings.logDays))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  if (settings.logDaysConfigured) {
+    return <p className="muted">The service's configuration keeps log entries for {settings.logDays} days, in Nexus:LogDays.</p>
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    setSaved(false)
+    try {
+      onSaved(await saveLogDays(Number(days)))
+      setSaved(true)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="form inline" onSubmit={submit}>
+      <label>
+        Keep entries for this many days
+        <input type="number" min={1} max={365} step={1} value={days} onChange={(e) => setDays(e.target.value)} required />
+      </label>
+      <div className="form-actions">
+        <button type="submit" disabled={busy}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="success">Saved.</span>}
+      </div>
+      {error && <p className="error wide">{error}</p>}
+    </form>
   )
 }

@@ -9,9 +9,9 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Nexus.Service.Auth;
 using Nexus.Service.Storage;
+using Serilog.Core;
 
 namespace Nexus.Service.Tests;
 
@@ -43,6 +43,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         $"{ServiceSettings.Section}:{nameof(ServiceSettings.CallbackOrigin)}",
         $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFrom)}",
         $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFromName)}",
+        $"{ServiceSettings.Section}:{nameof(ServiceSettings.LogDays)}",
         $"{SchwabApp.Section}:{nameof(SchwabApp.CallbackUrl)}",
         $"{SchwabApp.Section}:{nameof(SchwabApp.AppKey)}",
         $"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}",
@@ -154,9 +155,9 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
         builder.UseSetting("Mail:PickupDirectory", _mailToFiles ? MailDirectory : string.Empty);
 
-        builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton<ILogEventSink>(Logs);
             services.RemoveAll<IDatabaseHost>();
             services.AddSingleton<IDatabaseHost>(Database);
             services.RemoveAll<SourceConnectors>();

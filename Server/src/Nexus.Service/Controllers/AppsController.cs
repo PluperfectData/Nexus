@@ -33,7 +33,7 @@ public sealed record AppRequest(string? Name, IReadOnlyList<string>? ReturnUrls)
 
 /// <summary>A workspace's apps. Members see them, to choose a destination for a sync; admins make and change them.</summary>
 [ApiController]
-public sealed class AppsController(NexusDbContext db, Access access, TimeProvider time) : ControllerBase
+public sealed class AppsController(NexusDbContext db, Access access, OperatorLog log, TimeProvider time) : ControllerBase
 {
     private const int MaxReturnUrls = 10;
 
@@ -80,6 +80,7 @@ public sealed class AppsController(NexusDbContext db, Access access, TimeProvide
             CreatedAt = now,
         };
         db.Apps.Add(app);
+        log.Info($"App {name} was made, with key {prefix}….", LogPlace.In(workspaceId));
         await db.SaveChangesAsync(ct);
         return StatusCode(StatusCodes.Status201Created, new AppWithKey(View(app, []), key));
     }
@@ -98,6 +99,9 @@ public sealed class AppsController(NexusDbContext db, Access access, TimeProvide
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        log.Info(
+            app.Name == name ? $"App {name}'s return addresses were changed." : $"App {app.Name} was renamed {name}, and its return addresses saved.",
+            LogPlace.In(app.WorkspaceId));
         app.Name = name;
         app.ReturnUrls = JsonSerializer.Serialize(urls);
         await db.SaveChangesAsync(ct);
@@ -115,6 +119,9 @@ public sealed class AppsController(NexusDbContext db, Access access, TimeProvide
         }
 
         var (key, hash, prefix) = AppKeys.Make();
+        log.Info(
+            app.KeyPrefix is { } old ? $"App {app.Name} was given key {prefix}…, which ends key {old}…." : $"App {app.Name} was given key {prefix}….",
+            LogPlace.In(app.WorkspaceId));
         app.KeyHash = hash;
         app.KeyPrefix = prefix;
         app.KeyCreatedAt = time.GetUtcNow().UtcDateTime;
@@ -129,6 +136,11 @@ public sealed class AppsController(NexusDbContext db, Access access, TimeProvide
         if (await db.Apps.FirstOrDefaultAsync(a => a.Id == id, ct) is not { } app)
         {
             return NotFound();
+        }
+
+        if (app.KeyPrefix is { } revoked)
+        {
+            log.Info($"App {app.Name}'s key {revoked}… was revoked.", LogPlace.In(app.WorkspaceId));
         }
 
         app.KeyHash = null;
@@ -151,8 +163,27 @@ public sealed class AppsController(NexusDbContext db, Access access, TimeProvide
             return Problem("A sync to this app is running. Wait for it to end, then remove the app.", statusCode: StatusCodes.Status409Conflict);
         }
 
-        return await db.Apps.Where(a => a.Id == id).ExecuteDeleteAsync(ct) == 0 ? NotFound() : NoContent();
+        if (await db.Apps.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct) is not { } app)
+        {
+            return NotFound();
+        }
+
+        var orphaned = await db.Syncs.CountAsync(s => s.Destination!.AppId == id, ct);
+        if (await db.Apps.Where(a => a.Id == id).ExecuteDeleteAsync(ct) == 0)
+        {
+            return NotFound();
+        }
+
+        log.Info(
+            orphaned == 0
+                ? $"App {app.Name} was removed, with its destinations."
+                : $"App {app.Name} was removed, with its destinations. {Syncs(orphaned)} into them now wait for a new destination.",
+            LogPlace.In(app.WorkspaceId));
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
+
+    internal static string Syncs(int count) => count == 1 ? "1 sync" : $"{count} syncs";
 
     private static string? Check(AppRequest request, out string name, out List<string> urls)
     {

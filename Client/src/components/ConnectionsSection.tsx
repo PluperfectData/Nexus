@@ -1,4 +1,5 @@
 import { type FormEvent, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { addConnection, type App, type Connection, type Connector, startSignIn, type Sync, type SyncEdit } from '../api'
 import { leaveFor } from '../browser'
 import { placesOf } from '../places'
@@ -203,6 +204,9 @@ export function ConnectionsSection({
                     </button>
                   )}
                   {connection.fileName && <ReplaceFile connection={connection} onPick={(file) => onReplaceFile(connection, file)} />}
+                  <Link to={`/log?connection=${connection.id}`} className="row-link" aria-label={`Log for connection ${connection.name}`}>
+                    Log
+                  </Link>
                   <button type="button" className="quiet" onClick={() => onRemove(connection)}>
                     Remove
                   </button>

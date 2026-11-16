@@ -44,8 +44,13 @@ public sealed record SyncEditRequest(int DestinationId, string? Table, SyncMode 
 /// removes one.
 /// </summary>
 [ApiController]
-public sealed class SyncsController(NexusDbContext db, Access access, SyncMaker maker, SourceConnectors connectors, PendingRuns queue)
-    : ControllerBase
+public sealed class SyncsController(
+    NexusDbContext db,
+    Access access,
+    SyncMaker maker,
+    SourceConnectors connectors,
+    PendingRuns queue,
+    OperatorLog log) : ControllerBase
 {
     private const int MaxRuns = 20;
 
@@ -86,7 +91,7 @@ public sealed class SyncsController(NexusDbContext db, Access access, SyncMaker 
             return Problem(OtherWorkspace, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var (syncs, problem) = await maker.AddAsync(connection, destination, request.Streams, ct);
+        var (syncs, problem) = await maker.AddAsync(connection, destination, request.Streams, null, ct);
         return syncs is null
             ? Problem(problem, statusCode: StatusCodes.Status400BadRequest)
             : StatusCode(StatusCodes.Status201Created, syncs.Select(s => View(s, null)).ToList());
@@ -112,6 +117,7 @@ public sealed class SyncsController(NexusDbContext db, Access access, SyncMaker 
         }
 
         sync.Status = SyncStatus.Queued;
+        log.Info($"Sync {sync.Table} was asked to run now.", LogPlace.On(sync, sync.Connection!));
         await db.SaveChangesAsync(ct);
         queue.Enqueue(new PendingRun(sync.Id, 1));
         return StatusCode(StatusCodes.Status202Accepted, View(sync, await LastRunAsync(sync.Id, ct)));
@@ -173,6 +179,11 @@ public sealed class SyncsController(NexusDbContext db, Access access, SyncMaker 
         }
 
         db.Syncs.Remove(sync);
+        log.Info(
+            sync.Destination is { } destination
+                ? $"Sync {sync.Table} was removed. Its table stays at {LogWords.Destination(destination, destination.App!.Name)}."
+                : $"Sync {sync.Table} was removed.",
+            LogPlace.On(sync.Connection!));
         await db.SaveChangesAsync(ct);
         return NoContent();
     }

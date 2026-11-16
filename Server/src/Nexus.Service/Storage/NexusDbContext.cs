@@ -42,8 +42,25 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
 
     public DbSet<StoredSignIn> PendingSignIns => Set<StoredSignIn>();
 
+    public DbSet<LogEntry> LogEntries => Set<LogEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<LogEntry>(entry =>
+        {
+            entry.ToTable("log_entries");
+            entry.HasIndex(e => e.At);
+            entry.HasIndex(e => new { e.WorkspaceId, e.Id });
+            entry.Property(e => e.At).HasConversion(Utc);
+            entry.Property(e => e.Level).HasConversion<string>().HasMaxLength(16);
+            entry.Property(e => e.Text).HasMaxLength(LogEntry.MaxTextLength);
+            entry.Property(e => e.Actor).HasMaxLength(LogEntry.MaxActorLength);
+            entry.Ignore(e => e.Pending);
+            entry.HasOne(e => e.Workspace).WithMany().HasForeignKey(e => e.WorkspaceId).OnDelete(DeleteBehavior.SetNull);
+            entry.HasOne(e => e.Connection).WithMany().HasForeignKey(e => e.ConnectionId).OnDelete(DeleteBehavior.SetNull);
+            entry.HasOne(e => e.Sync).WithMany().HasForeignKey(e => e.SyncId).OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<ProviderApp>(app =>
         {
             app.ToTable("provider_apps");

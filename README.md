@@ -513,7 +513,8 @@ The first admin comes from the installer, below.
 | Route | Does |
 |---|---|
 | `GET /install`, `POST /install/database`, `POST /install/address`, `POST /install/admin`, `POST /install/code` | The installer, below |
-| `/settings`, `/settings/addresses`, `/settings/mail`, `POST /settings/mail/test`, `/settings/database` | Admins see and change the instance's addresses, mail, and database, and send a test mail |
+| `/settings`, `/settings/addresses`, `/settings/mail`, `POST /settings/mail/test`, `/settings/database`, `PUT /settings/log` | Admins see and change the instance's addresses, mail, database, and how many days the log keeps an entry, and send a test mail |
+| `GET /log?workspace=&connection=&sync=&level=&before=&instance=` | The Log page's entries, below: newest first, 100 at a time, with `next` for the older ones. `level=Warning` keeps warnings and errors, and an admin's `instance=true` keeps the entries about the whole instance. |
 | `POST /auth/sign-in`, `POST /auth/link`, `POST /auth/link/redeem` | Signs in with a password, mails a link, or signs in with one |
 | `GET /auth/me`, `GET /auth/csrf`, `POST /auth/refresh`, `POST /auth/sign-out`, `PUT /auth/password` | The session and the signed-in user's password |
 | `/users` | Admins invite, change, and remove users. An invite that is not mailed answers its link. |
@@ -564,6 +565,30 @@ token after the `#`, and the page sends it as `Authorization: Bearer nxc_...` to
 
 A request that carries an `Authorization` header skips the antiforgery check, since another site's page cannot
 send one without a CORS preflight, which the service answers for its client's origin alone.
+
+### Logs
+
+The service keeps two logs.
+
+**The Log page**, `/log` on the client, lists what happened, newest first, each in a sentence that names its
+workspace, connection, or sync:
+
+- each run, with the rows it sent or its error, and when it tries again
+- a connector's own warnings, and a connection that needs a new sign-in
+- each change someone made, with who made it: an email, or `app` and the app's name
+
+An admin sees every entry, and a member sees their own workspaces'. Entries about users, settings, and the
+installer belong to the whole instance, so only admins see them. Each connection and table on the workspace page
+links to its own entries. A removed workspace's entries stay, as entries about the whole instance.
+
+Entries are kept in the database for 30 days, a number an admin changes on the Settings page, from 1 to 365. Signing
+in or out, reading anything, and the install code write no entry.
+
+**The developer log** goes to the console and to a file a day in `data/logs`, `nexus-<date>.log`, keeping 14. It
+has every Log page entry, under `Nexus.Operator`, one line for each request, and the framework's detail and the
+stack traces the Log page leaves out. Its levels come from `Serilog:MinimumLevel`: Information, with
+`Microsoft.AspNetCore` and `Microsoft.EntityFrameworkCore` at Warning. For more detail, set
+`Serilog__MinimumLevel__Default` to `Debug`.
 
 ### Running it
 
@@ -641,6 +666,7 @@ debugging. A configured value wins over the stored one, and the pages show it wi
 | `Jwt:SigningKey` | `Jwt__SigningKey` | The session signing key the service makes, at least 32 bytes |
 | `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail: it is written to files there instead |
 | `Nexus:Schwab:AppKey`, `Nexus:Schwab:AppSecret` | `Nexus__Schwab__AppKey`, `Nexus__Schwab__AppSecret` | Each workspace's Schwab app |
+| `Nexus:LogDays` | `Nexus__LogDays` | How many days the Log page keeps an entry |
 
 For example, as a user secret:
 

@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nexus.Service.Auth;
@@ -120,6 +121,15 @@ public sealed partial class InstallTests
         (await browser.GetAsync<JsonElement>("/install")).GetProperty("installed").GetBoolean().ShouldBeTrue();
         (await GetAsync(browser, code: code)).GetProperty("allowed").GetBoolean().ShouldBeFalse();
         (await browser.SendAsync(HttpMethod.Post, "/workspaces", new { name = "Acme" })).StatusCode.ShouldBe(HttpStatusCode.Created);
+        await using var db = factory.NewContext();
+        (await db.LogEntries.OrderBy(e => e.Id).Select(e => e.Text).ToListAsync()).ShouldBe(
+        [
+            "The installer set the database: nexus_live on db.example.test:3307, signing in as nexus.",
+            $"The installer set the client's address to {ServiceFactory.ClientOrigin}.",
+            "The installer made founder@acme.test, the first admin.",
+            "Workspace Acme was made.",
+        ]);
+        (await db.LogEntries.AnyAsync(e => e.Text.Contains(code))).ShouldBeFalse();
     }
 
     [Test]
@@ -177,6 +187,10 @@ public sealed partial class InstallTests
         (await browser.GetAsync<JsonElement>("/auth/me")).GetProperty("email").GetString().ShouldBe(ServiceFactory.OwnerEmail);
         using var other = factory.NewBrowser();
         (await other.SignInAsync(ServiceFactory.OwnerEmail, Browser.Password)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await using var db = factory.NewContext();
+        var entries = await db.LogEntries.Select(e => e.Text).ToListAsync();
+        entries.ShouldBe([$"The installer made {ServiceFactory.OwnerEmail} an admin, with a new password."]);
+        entries.ShouldNotContain(text => text.Contains(CodePattern().Match(lines.Single()).Value));
     }
 
     [Test]

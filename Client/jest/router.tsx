@@ -2,12 +2,28 @@
 import type { ReactNode } from 'react'
 
 export const navigate = jest.fn()
-export const routerState = { params: {} as Record<string, string>, pathname: '/' }
+export const routerState = { params: {} as Record<string, string>, pathname: '/', search: new URLSearchParams() }
 
-type LinkProps = { to: string; children: ReactNode; className?: string | ((state: { isActive: boolean }) => string); role?: string }
+/** Keeps the address's query, as the page asked, for the test to render again with. */
+export const setSearchParams = jest.fn((next: URLSearchParams) => {
+  routerState.search = next
+})
 
-const link = ({ to, children, className, role }: LinkProps) => (
-  <a href={to} role={role} className={typeof className === 'function' ? className({ isActive: routerState.pathname === to }) : className}>
+type LinkProps = {
+  to: string
+  children: ReactNode
+  className?: string | ((state: { isActive: boolean }) => string)
+  role?: string
+  'aria-label'?: string
+}
+
+const link = ({ to, children, className, role, 'aria-label': label }: LinkProps) => (
+  <a
+    href={to}
+    role={role}
+    aria-label={label}
+    className={typeof className === 'function' ? className({ isActive: routerState.pathname === to }) : className}
+  >
     {children}
   </a>
 )
@@ -23,4 +39,5 @@ export const reactRouterMock = () => ({
   useNavigate: () => navigate,
   useParams: () => routerState.params,
   useLocation: () => ({ pathname: routerState.pathname, hash: '', state: null }),
+  useSearchParams: () => [routerState.search, setSearchParams],
 })

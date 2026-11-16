@@ -12,12 +12,12 @@ public sealed record DestinationRequest(string? Url, string? Key);
 /// <summary>Where an app's rows go, for admins: its push API's address and key, checked before they are kept.</summary>
 [ApiController]
 [Authorize(Policy = NexusClaims.AdminPolicy)]
-public sealed class DestinationsController(NexusDbContext db, PushDestination push, Secrets secrets, TimeProvider time) : ControllerBase
+public sealed class DestinationsController(NexusDbContext db, PushDestination push, Secrets secrets, OperatorLog log, TimeProvider time) : ControllerBase
 {
     [HttpPost("apps/{appId:int}/destinations")]
     public async Task<ActionResult<DestinationView>> Add(int appId, DestinationRequest request, CancellationToken ct)
     {
-        if (!await db.Apps.AnyAsync(a => a.Id == appId, ct))
+        if (await db.Apps.FirstOrDefaultAsync(a => a.Id == appId, ct) is not { } app)
         {
             return NotFound();
         }
@@ -43,6 +43,7 @@ public sealed class DestinationsController(NexusDbContext db, PushDestination pu
         var destination = new Destination { AppId = appId, Url = url, Key = secrets.ProtectText(key), CreatedAt = now };
         destination.Checked(named, null, now);
         db.Destinations.Add(destination);
+        log.Info($"Destination {url} was added to app {app.Name}, sending key {named.Prefix}…, named {named.Name}.", LogPlace.In(app.WorkspaceId));
         await db.SaveChangesAsync(ct);
         return StatusCode(StatusCodes.Status201Created, DestinationView.Of(destination));
     }
@@ -51,7 +52,7 @@ public sealed class DestinationsController(NexusDbContext db, PushDestination pu
     [HttpPost("destinations/{id:int}/check")]
     public async Task<ActionResult<DestinationView>> Check(int id, CancellationToken ct)
     {
-        if (await db.Destinations.FirstOrDefaultAsync(d => d.Id == id, ct) is not { } destination)
+        if (await db.Destinations.Include(d => d.App).FirstOrDefaultAsync(d => d.Id == id, ct) is not { } destination)
         {
             return NotFound();
         }
@@ -64,6 +65,7 @@ public sealed class DestinationsController(NexusDbContext db, PushDestination pu
         catch (ConnectorException ex)
         {
             destination.Checked(null, ex.Message, now);
+            log.Warn($"Destination {destination.Url} of app {destination.App!.Name} refused its key: {ex.Message}", LogPlace.In(destination.App.WorkspaceId));
         }
 
         await db.SaveChangesAsync(ct);
@@ -79,7 +81,24 @@ public sealed class DestinationsController(NexusDbContext db, PushDestination pu
             return Problem("A sync to this destination is running. Wait for it to end, then remove it.", statusCode: StatusCodes.Status409Conflict);
         }
 
-        return await db.Destinations.Where(d => d.Id == id).ExecuteDeleteAsync(ct) == 0 ? NotFound() : NoContent();
+        if (await db.Destinations.AsNoTracking().Include(d => d.App).FirstOrDefaultAsync(d => d.Id == id, ct) is not { } destination)
+        {
+            return NotFound();
+        }
+
+        var orphaned = await db.Syncs.CountAsync(s => s.DestinationId == id, ct);
+        if (await db.Destinations.Where(d => d.Id == id).ExecuteDeleteAsync(ct) == 0)
+        {
+            return NotFound();
+        }
+
+        log.Info(
+            orphaned == 0
+                ? $"Destination {destination.Url} of app {destination.App!.Name} was removed."
+                : $"Destination {destination.Url} of app {destination.App!.Name} was removed. {AppsController.Syncs(orphaned)} into it now wait for a new destination.",
+            LogPlace.In(destination.App.WorkspaceId));
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     internal static ConnectorConfig Config(string url, string key) =>

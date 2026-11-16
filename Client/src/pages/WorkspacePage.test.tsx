@@ -263,6 +263,14 @@ it('says what each table reads and where it writes, and runs one now', async () 
   expect(within(row).getByRole('button', { name: 'Run now' })).toBeDisabled()
 })
 
+it("links each connection and each table to its own entries on the Log page", async () => {
+  renderAs(member)
+  const row = await rowOf('shop_orders')
+
+  expect(within(row).getByRole('link', { name: 'Log for sync shop_orders' })).toHaveAttribute('href', '/log?sync=11')
+  expect(screen.getByRole('link', { name: 'Log for connection Shop' })).toHaveAttribute('href', '/log?connection=9')
+})
+
 it("edits a table's destination, name, and way of reading", async () => {
   jest.mocked(listApps).mockResolvedValue([reports, scry])
   jest.mocked(editSync).mockResolvedValue({

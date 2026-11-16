@@ -42,7 +42,8 @@ public sealed record InstallView(
 [AllowAnonymous]
 [SkipAntiforgery]
 [AnyOrigin]
-public sealed class InstallController(Installation installation, Instance instance, InstallAccess access, TimeProvider time) : ControllerBase
+public sealed class InstallController(Installation installation, Instance instance, InstallAccess access, IServiceScopeFactory scopes, TimeProvider time)
+    : ControllerBase
 {
     [HttpGet]
     public async Task<InstallView> Get(CancellationToken ct) => await ViewAsync(access.Check(HttpContext) == InstallAccessResult.Allowed, ct);
@@ -76,6 +77,7 @@ public sealed class InstallController(Installation installation, Instance instan
             return Problem(failed, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        await NoteAsync($"The installer set the database: {settings!.Name} on {settings.Host}:{settings.Port}, signing in as {settings.User}.", ct);
         return await ViewAsync(allowed: true, ct);
     }
 
@@ -98,7 +100,13 @@ public sealed class InstallController(Installation installation, Instance instan
             return Problem(AddressRules.Client, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var changed = origin != instance.ClientOrigin;
         instance.File.SaveClientOrigin(origin);
+        if (changed && installation.DatabaseReady)
+        {
+            await NoteAsync($"The installer set the client's address to {origin}.", ct);
+        }
+
         return await ViewAsync(allowed: true, ct);
     }
 
@@ -143,6 +151,9 @@ public sealed class InstallController(Installation installation, Instance instan
         user.IsAdmin = true;
         user.LinkStamp = SignInLinks.NewStamp();
         user.PasswordHash = Passwords.Hash(user, request.Password!);
+        services.GetRequiredService<OperatorLog>().Info(
+            existing ? $"The installer made {email} an admin, with a new password." : $"The installer made {email}, the first admin.",
+            LogPlace.Instance);
         await db.SaveChangesAsync(ct);
         if (existing)
         {
@@ -160,6 +171,14 @@ public sealed class InstallController(Installation installation, Instance instan
     {
         await installation.AnnounceAsync(ct);
         return Accepted();
+    }
+
+    // The installer's routes run before the database is set, so each entry is saved through a context of its own.
+    private async Task NoteAsync(string text, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        scope.ServiceProvider.GetRequiredService<OperatorLog>().Info(text, LogPlace.Instance);
+        await scope.ServiceProvider.GetRequiredService<NexusDbContext>().SaveChangesAsync(ct);
     }
 
     private ObjectResult? Refusal() => access.Check(HttpContext) switch

@@ -23,9 +23,12 @@ public sealed partial class SyncRunner(
     Secrets secrets,
     RetryPolicy retry,
     TimeProvider time,
+    OperatorLog log,
     ILogger<SyncRunner> logger)
 {
     public const string NoDestination = "Its destination was removed. Pick a new one to send it to.";
+
+    public const string Unexpected = "The run stopped on an error the service did not expect. The Log page has the error.";
 
     /// <summary>
     /// Runs the sync and records how it went, on the run and on the sync. Answers how long to wait before trying again,
@@ -35,7 +38,7 @@ public sealed partial class SyncRunner(
     {
         var sync = await db.Syncs
             .Include(s => s.Connection).ThenInclude(c => c!.Workspace)
-            .Include(s => s.Destination)
+            .Include(s => s.Destination).ThenInclude(d => d!.App)
             .FirstOrDefaultAsync(s => s.Id == syncId, ct);
         if (sync is null)
         {
@@ -53,26 +56,39 @@ public sealed partial class SyncRunner(
             run.Status = RunStatus.Succeeded;
             sync.Status = SyncStatus.Ready;
             sync.Connection!.NeedsSignIn = false;
+            log.Info($"{Named(sync)} sent {LogWords.Rows(run.Rows)} from {LogWords.Connection(sync.Connection, connectors)}, stream {sync.Stream}, into {Into(sync)}.", Place(sync));
             return await EndAsync(run, null, ct);
         }
         catch (ConnectorException ex)
         {
-            if (ex.Kind == ConnectorErrorKind.AuthExpired)
+            var connection = sync.Connection!;
+            if (ex.Kind == ConnectorErrorKind.AuthExpired && !connection.NeedsSignIn)
             {
-                sync.Connection!.NeedsSignIn = true;
+                connection.NeedsSignIn = true;
+                log.Warn($"{LogWords.Connection(connection, connectors)} needs a new sign-in. Its syncs stop until someone signs in again from the workspace page.", LogPlace.On(connection));
             }
 
             Fail(run, ex.Kind, ex.Message);
             var retried = (ex.Kind is ConnectorErrorKind.Transient or ConnectorErrorKind.RateLimited) && attempt <= retry.Delays.Count;
             sync.Status = retried ? SyncStatus.Queued : SyncStatus.Failed;
             var wait = retried ? Max(retry.Delays[attempt - 1], ex.RetryAfter) : (TimeSpan?)null;
+            if (wait is { } delay)
+            {
+                log.Warn($"{Named(sync)} failed: {ex.Message} It tries again {LogWords.After(delay)} (try {attempt + 1} of {retry.Delays.Count + 1}).", Place(sync));
+            }
+            else
+            {
+                log.Error($"{Named(sync)} failed: {ex.Message}", Place(sync));
+            }
+
             return await EndAsync(run, wait, CancellationToken.None);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             LogFailure(logger, ex, sync.Id);
-            Fail(run, null, "The run stopped on an error the service did not expect. Run it again, or see the service's log.");
+            Fail(run, null, Unexpected);
             sync.Status = SyncStatus.Failed;
+            log.Error($"{Named(sync)} stopped on an error the service did not expect: {ex.GetType().Name}: {ex.Message}", Place(sync));
             return await EndAsync(run, null, CancellationToken.None);
         }
     }
@@ -120,7 +136,7 @@ public sealed partial class SyncRunner(
     }
 
     // The table is named for the sync, not for the stream, which may be a database's schema.table. Refreshed tokens are
-    // saved as they come, and the connector's log lines go to the service's log.
+    // saved as they come. The connector's log lines go to the operator log, or to the developer log alone below Information.
     private async IAsyncEnumerable<SyncMessage> Renamed(
         IAsyncEnumerable<SyncMessage> messages,
         Sync sync,
@@ -153,12 +169,35 @@ public sealed partial class SyncRunner(
                     await db.SaveChangesAsync(ct);
                     break;
 
+                case LogMessage line when line.Level >= LogLevel.Information:
+                    var said = $"{Named(sync)}: {line.Text}";
+                    if (line.Level >= LogLevel.Error)
+                    {
+                        log.Error(said, Place(sync));
+                    }
+                    else if (line.Level == LogLevel.Warning)
+                    {
+                        log.Warn(said, Place(sync));
+                    }
+                    else
+                    {
+                        log.Info(said, Place(sync));
+                    }
+
+                    break;
+
                 case LogMessage line:
                     LogConnector(logger, line.Level, sync.Id, line.Text);
                     break;
             }
         }
     }
+
+    private static string Named(Sync sync) => $"Sync {sync.Table}";
+
+    private static string Into(Sync sync) => LogWords.Destination(sync.Destination!, sync.Destination!.App!.Name);
+
+    private static LogPlace Place(Sync sync) => LogPlace.On(sync, sync.Connection!);
 
     /// <summary>What the push API is told of where a table's rows come from.</summary>
     internal static string OriginOf(Sync sync, ISourceConnector source) =>

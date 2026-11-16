@@ -25,7 +25,7 @@ public sealed record SignInAppRequest(string? ClientId, string? ClientSecret);
 /// <summary>The apps a workspace signs in to providers through, such as its Schwab app, for its members.</summary>
 [ApiController]
 [Route("workspaces/{workspaceId:int}/sign-in-apps")]
-public sealed class SignInAppsController(NexusDbContext db, Access access, OAuthApps apps, Secrets secrets, TimeProvider time) : ControllerBase
+public sealed class SignInAppsController(NexusDbContext db, Access access, OAuthApps apps, Secrets secrets, OperatorLog log, TimeProvider time) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IEnumerable<SignInAppView>>> List(int workspaceId, CancellationToken ct)
@@ -83,6 +83,7 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
         {
             app = new ProviderApp { WorkspaceId = workspaceId, Connector = connector, ClientId = key, ClientSecret = secrets.ProtectText(secret) };
             db.ProviderApps.Add(app);
+            log.Info($"The {found.Spec.DisplayName} sign-in app was set, with a key ending {Ending(key)}.", LogPlace.In(workspaceId));
         }
         else
         {
@@ -95,6 +96,14 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
             {
                 app.ClientSecret = secrets.ProtectText(secret);
             }
+
+            var changed = (key.Length > 0, secret.Length > 0) switch
+            {
+                (true, true) => "its key and secret were replaced",
+                (true, false) => "its key was replaced",
+                _ => "its secret was replaced",
+            };
+            log.Info($"The {found.Spec.DisplayName} sign-in app was changed: {changed}. Its key ends {Ending(app.ClientId)}.", LogPlace.In(workspaceId));
         }
 
         app.UpdatedAt = time.GetUtcNow().UtcDateTime;
@@ -112,8 +121,18 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
         }
 
         var removed = await db.ProviderApps.Where(a => a.WorkspaceId == workspaceId && a.Connector == connector).ExecuteDeleteAsync(ct);
-        return removed == 0 ? NotFound() : NoContent();
+        if (removed == 0)
+        {
+            return NotFound();
+        }
+
+        var name = apps.SignInConnectors.FirstOrDefault(c => c.Spec.Id == connector)?.Spec.DisplayName ?? connector;
+        log.Info($"The {name} sign-in app was removed. Its connections stop syncing until another is set.", LogPlace.In(workspaceId));
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
+
+    private static string Ending(string key) => key[^Math.Min(4, key.Length)..];
 
     private async Task<SignInAppView> ViewAsync(ISourceConnector connector, int workspaceId, ProviderApp? stored, CancellationToken ct)
     {

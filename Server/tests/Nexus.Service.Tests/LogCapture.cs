@@ -1,27 +1,27 @@
 using System.Collections.Concurrent;
-using Microsoft.Extensions.Logging;
+using Serilog.Core;
+using Serilog.Events;
+using Serilog.Formatting.Display;
 
 namespace Nexus.Service.Tests;
 
 /// <summary>Keeps every line the service logs, so a test can read what an operator would.</summary>
-internal sealed class LogCapture : ILoggerProvider
+internal sealed class LogCapture : ILogEventSink
 {
+    private static readonly MessageTemplateTextFormatter Text = new("{Message:lj}");
+
     public ConcurrentQueue<string> Lines { get; } = new();
 
-    public ILogger CreateLogger(string categoryName) => new Writer(Lines);
+    /// <summary>Each line with the category that wrote it, such as <c>Nexus.Operator</c>.</summary>
+    public ConcurrentQueue<(string? Category, string Line)> Written { get; } = new();
 
-    public void Dispose()
+    public void Emit(LogEvent logEvent)
     {
-    }
-
-    private sealed class Writer(ConcurrentQueue<string> lines) : ILogger
-    {
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            lines.Enqueue(formatter(state, exception));
+        using var writer = new StringWriter();
+        Text.Format(logEvent, writer);
+        var line = writer.ToString();
+        Lines.Enqueue(line);
+        var category = logEvent.Properties.TryGetValue("SourceContext", out var source) && source is ScalarValue { Value: string name } ? name : null;
+        Written.Enqueue((category, line));
     }
 }

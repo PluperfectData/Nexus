@@ -12,6 +12,7 @@ using Nexus.Service.Auth;
 using Nexus.Service.Storage;
 using Pluperfect.Jwt;
 using Pluperfect.Mail;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,12 @@ const string PushClient = "push";
 // antiforgery cookie take the same answer.
 var secureOrigin = !builder.Environment.IsDevelopment();
 
+// Each host owns its logger and closes its file when it stops, leaving the static Log alone. Sinks registered as
+// ILogEventSink, such as a test's, join the console and the file.
+builder.Services.AddSerilog(
+    (services, logger) => DeveloperLog.Configure(logger, builder.Configuration, dataDirectory).ReadFrom.Services(services),
+    preserveStaticLogger: true);
+
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(TimeProvider.System);
 
@@ -49,9 +56,17 @@ builder.Services.AddSingleton<IDatabaseHost, MySqlDatabaseHost>();
 builder.Services.AddSingleton<InstallCode>();
 builder.Services.AddSingleton<InstallAccess>();
 builder.Services.AddSingleton<Installation>();
-builder.Services.AddDbContext<NexusDbContext>((services, options) => services.GetRequiredService<IDatabaseHost>().Configure(
-    options,
-    services.GetRequiredService<Installation>().ConnectionString ?? throw new InvalidOperationException(InstallGate.NotSetUp)));
+builder.Services.AddSingleton<OperatorLogWriter>();
+builder.Services.AddDbContext<NexusDbContext>((services, options) =>
+{
+    services.GetRequiredService<IDatabaseHost>().Configure(
+        options,
+        services.GetRequiredService<Installation>().ConnectionString ?? throw new InvalidOperationException(InstallGate.NotSetUp));
+    options.AddInterceptors(services.GetRequiredService<OperatorLogWriter>());
+});
+builder.Services.AddScoped<OperatorLog>();
+builder.Services.AddScoped<LogPruning>();
+builder.Services.AddHostedService<LogPruner>();
 
 builder.Services.AddSingleton(builder.Configuration.GetSection(SchwabApp.Section).Get<SchwabApp>() ?? new SchwabApp());
 builder.Services.AddHttpClient(OAuthApps.SchwabHttpClient);
@@ -159,6 +174,13 @@ if (args is ["add-admin", var email])
     return;
 }
 
+app.UseSerilogRequestLogging(options =>
+{
+    // Without it the middleware writes to the static Log, which this host does not set.
+    options.Logger = app.Services.GetRequiredService<Serilog.ILogger>();
+    options.GetLevel = DeveloperLog.RequestLevel;
+});
+
 // Before authentication, so a refused preflight still carries CORS headers and the browser shows the real answer.
 app.UseCors();
 app.UseInstallGate();
@@ -166,7 +188,19 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-await app.RunAsync();
+try
+{
+    await app.RunAsync();
+}
+catch (Exception ex) when (ex is not HostAbortedException)
+{
+    Program.LogStopped(app.Logger, ex);
+    Environment.ExitCode = 1;
+}
 
 /// <summary>Exposed so WebApplicationFactory can find the entry point.</summary>
-public partial class Program;
+public partial class Program
+{
+    [LoggerMessage(Level = LogLevel.Critical, Message = "Nexus stopped on an error it did not expect.")]
+    internal static partial void LogStopped(Microsoft.Extensions.Logging.ILogger logger, Exception ex);
+}

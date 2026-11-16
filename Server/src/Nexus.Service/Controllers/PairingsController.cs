@@ -34,8 +34,13 @@ public sealed record PairingClaimed(string AppKey, int DestinationId, string App
 /// </summary>
 [ApiController]
 [Route("pairings")]
-public sealed class PairingsController(NexusDbContext db, PushDestination push, Secrets secrets, Instance instance, TimeProvider time)
-    : ControllerBase
+public sealed class PairingsController(
+    NexusDbContext db,
+    PushDestination push,
+    Secrets secrets,
+    Instance instance,
+    OperatorLog log,
+    TimeProvider time) : ControllerBase
 {
     private const string Gone = "This pairing has expired or is finished. Start again from the app.";
 
@@ -97,11 +102,12 @@ public sealed class PairingsController(NexusDbContext db, PushDestination push, 
             return Problem(Gone, statusCode: StatusCodes.Status404NotFound);
         }
 
-        if (!await db.Workspaces.AnyAsync(w => w.Id == request.WorkspaceId, ct))
+        if (await db.Workspaces.FirstOrDefaultAsync(w => w.Id == request.WorkspaceId, ct) is not { } workspace)
         {
             return Problem("Pick a workspace for the app.", statusCode: StatusCodes.Status400BadRequest);
         }
 
+        log.Info($"{pairing.AppName} asked to link, and was approved into workspace {workspace.Name}.", LogPlace.In(workspace.Id));
         pairing.WorkspaceId = request.WorkspaceId;
         pairing.ApprovedById = User.UserId();
         pairing.ApprovedAt = time.GetUtcNow().UtcDateTime;
@@ -119,6 +125,7 @@ public sealed class PairingsController(NexusDbContext db, PushDestination push, 
         }
 
         pairing.DeclinedAt = time.GetUtcNow().UtcDateTime;
+        log.Info($"{pairing.AppName} asked to link, and was declined.", LogPlace.Instance);
         await db.SaveChangesAsync(ct);
         return new PairingEnd(ReturnTo(pairing, "error", "declined"));
     }
@@ -170,6 +177,10 @@ public sealed class PairingsController(NexusDbContext db, PushDestination push, 
         destination.Checked(named, null, now);
         db.Destinations.Add(destination);
         pairing.ClaimedAt = now;
+        log.Info(
+            $"App {app.Name} was linked, with key {prefix}… and destination {destination.Url}, sending key {named.Prefix}…, named {named.Name}.",
+            LogPlace.In(app.WorkspaceId),
+            OperatorLog.AppActor(app.Name));
         await db.SaveChangesAsync(ct);
         pairing.AppId = app.Id;
         await db.SaveChangesAsync(ct);

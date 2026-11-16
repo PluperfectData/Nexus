@@ -21,6 +21,7 @@ public sealed class SignInsController(
     SignIns signIns,
     SourceConnectors connectors,
     Instance instance,
+    OperatorLog log,
     TimeProvider time) : ControllerBase
 {
     private const string Lost = "This sign-in ran out of time, or did not start in Nexus. Start it again.";
@@ -73,17 +74,17 @@ public sealed class SignInsController(
         ConnectSession? session = null;
         if (pending.SessionId is { } sessionId)
         {
-            session = await db.ConnectSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.EndedAt == null && s.ExpiresAt > now, ct);
+            session = await db.ConnectSessions.Include(s => s.App).FirstOrDefaultAsync(s => s.Id == sessionId && s.EndedAt == null && s.ExpiresAt > now, ct);
             if (session is null)
             {
-                return Failed(pending, "This connect page expired while you signed in. Go back to the app and start again.");
+                return await FailedAsync(pending, "This connect page expired while you signed in. Go back to the app and start again.", ct);
             }
         }
 
         var provider = connectors.Find(pending.Connector)?.Spec.DisplayName ?? pending.Connector;
         if (string.IsNullOrEmpty(code))
         {
-            return Failed(pending, $"{provider} did not sign you in: {error ?? "no reason given"}.");
+            return await FailedAsync(pending, $"{provider} did not sign you in: {error ?? "no reason given"}.", ct);
         }
 
         OAuthTokens tokens;
@@ -93,7 +94,7 @@ public sealed class SignInsController(
         }
         catch (ConnectorException ex)
         {
-            return Failed(pending, ex.Message);
+            return await FailedAsync(pending, ex.Message, ct);
         }
 
         Connection connection;
@@ -101,15 +102,15 @@ public sealed class SignInsController(
         {
             if (await db.Connections.FirstOrDefaultAsync(c => c.Id == connectionId, ct) is not { } renewed)
             {
-                return Failed(pending, "The connection this sign-in was for has been removed.");
+                return await FailedAsync(pending, "The connection this sign-in was for has been removed.", ct);
             }
 
-            await maker.RenewAsync(renewed, tokens, ct);
+            await maker.RenewAsync(renewed, tokens, session?.App?.Name, ct);
             connection = renewed;
         }
         else
         {
-            connection = await maker.AddSignedInAsync(pending.WorkspaceId, pending.Name!, pending.Connector, pending.Settings!, tokens, ct);
+            connection = await maker.AddSignedInAsync(pending.WorkspaceId, pending.Name!, pending.Connector, pending.Settings!, tokens, session?.App?.Name, ct);
         }
 
         if (session is null)
@@ -134,9 +135,14 @@ public sealed class SignInsController(
     private async Task<ActionResult<SignInPage>> PageForAsync(PendingSignIn pending, CancellationToken ct) =>
         new SignInPage((await apps.SignInPageAsync(pending.Connector, pending.WorkspaceId, await signIns.StartAsync(pending, ct), ct)).ToString());
 
-    // Back to the page the sign-in started from, with the reason it failed.
-    private RedirectResult Failed(PendingSignIn pending, string reason) =>
-        Redirect(pending.SessionToken is { } token
+    // Back to the page the sign-in started from, with the reason it failed, which the workspace's log keeps too.
+    private async Task<RedirectResult> FailedAsync(PendingSignIn pending, string reason, CancellationToken ct)
+    {
+        var provider = connectors.Find(pending.Connector)?.Spec.DisplayName ?? pending.Connector;
+        log.Warn($"A sign-in to {provider} failed: {reason}", LogPlace.In(pending.WorkspaceId));
+        await db.SaveChangesAsync(ct);
+        return Redirect(pending.SessionToken is { } token
             ? $"{Client}/connect?error={Uri.EscapeDataString(reason)}#{token}"
             : $"{Client}/workspaces/{pending.WorkspaceId}?error={Uri.EscapeDataString(reason)}");
+    }
 }

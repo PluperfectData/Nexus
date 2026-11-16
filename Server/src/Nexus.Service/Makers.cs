@@ -15,11 +15,13 @@ public sealed class ConnectionMaker(
     ConnectionFiles files,
     OAuthApps apps,
     Secrets secrets,
+    OperatorLog log,
     TimeProvider time)
 {
     /// <summary>
     /// The connection made, or the reason none was. A connector that reads a file takes it as <paramref name="file"/>,
-    /// already saved, which becomes the connection's own; on a refusal the file is deleted.
+    /// already saved, which becomes the connection's own; on a refusal the file is deleted. A connect page names its
+    /// app as <paramref name="connectPageApp"/>.
     /// </summary>
     public async Task<(Connection? Connection, string? Problem)> AddAsync(
         int workspaceId,
@@ -27,9 +29,10 @@ public sealed class ConnectionMaker(
         string? connectorId,
         IReadOnlyDictionary<string, string?>? given,
         UploadedFile? file,
+        string? connectPageApp,
         CancellationToken ct)
     {
-        var (connection, problem) = await MakeAsync(workspaceId, name, connectorId, given, file, ct);
+        var (connection, problem) = await MakeAsync(workspaceId, name, connectorId, given, file, connectPageApp, ct);
         if (connection is null)
         {
             files.Delete(file?.StoredFile);
@@ -73,6 +76,7 @@ public sealed class ConnectionMaker(
         string connectorId,
         IReadOnlyDictionary<string, string?> settings,
         OAuthTokens tokens,
+        string? connectPageApp,
         CancellationToken ct)
     {
         var connection = new Connection
@@ -85,15 +89,23 @@ public sealed class ConnectionMaker(
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.Connections.Add(connection);
+        log.Info(
+            $"Connection {LogWords.Connection(connection, connectors)} was signed in and added{LogWords.OnConnectPage(connectPageApp)}.",
+            LogPlace.On(connection),
+            LogWords.ConnectPageActor(connectPageApp));
         await db.SaveChangesAsync(ct);
         return connection;
     }
 
     /// <summary>Keeps the tokens a new sign-in brought back, so the connection syncs again.</summary>
-    public async Task RenewAsync(Connection connection, OAuthTokens tokens, CancellationToken ct)
+    public async Task RenewAsync(Connection connection, OAuthTokens tokens, string? connectPageApp, CancellationToken ct)
     {
         connection.Tokens = secrets.ProtectTokens(tokens);
         connection.NeedsSignIn = false;
+        log.Info(
+            $"Connection {LogWords.Connection(connection, connectors)} was signed in again{LogWords.OnConnectPage(connectPageApp)}.",
+            LogPlace.On(connection),
+            LogWords.ConnectPageActor(connectPageApp));
         await db.SaveChangesAsync(ct);
     }
 
@@ -117,8 +129,10 @@ public sealed class ConnectionMaker(
         }
 
         var old = connection.StoredFile;
+        var oldName = connection.FileName;
         connection.FileName = file.FileName;
         connection.StoredFile = file.StoredFile;
+        log.Info($"Connection {LogWords.Connection(connection, connectors)} now reads {file.FileName}, in place of {oldName}.", LogPlace.On(connection));
         await db.SaveChangesAsync(ct);
         files.Delete(old);
         return null;
@@ -162,6 +176,7 @@ public sealed class ConnectionMaker(
         string? connectorId,
         IReadOnlyDictionary<string, string?>? given,
         UploadedFile? file,
+        string? connectPageApp,
         CancellationToken ct)
     {
         var (connector, trimmed, settings, problem) = Prepare(name, connectorId, given);
@@ -208,6 +223,11 @@ public sealed class ConnectionMaker(
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.Connections.Add(connection);
+        var reads = file is null ? string.Empty : $", reading {file.FileName}";
+        log.Info(
+            $"Connection {LogWords.Connection(connection, connectors)} was added{reads}{LogWords.OnConnectPage(connectPageApp)}.",
+            LogPlace.On(connection),
+            LogWords.ConnectPageActor(connectPageApp));
         await db.SaveChangesAsync(ct);
         return (connection, null);
     }
@@ -246,15 +266,22 @@ public sealed class ConnectionMaker(
 }
 
 /// <summary>Adds syncs from a connection's streams into a destination, and queues the first run of each.</summary>
-public sealed partial class SyncMaker(NexusDbContext db, ConnectionMaker connections, PendingRuns queue, TimeProvider time)
+public sealed partial class SyncMaker(
+    NexusDbContext db,
+    ConnectionMaker connections,
+    SourceConnectors connectors,
+    PendingRuns queue,
+    OperatorLog log,
+    TimeProvider time)
 {
     public const string TableRule = "A table name starts with a lower-case letter and holds up to 63 lower-case letters, digits, and underscores.";
 
-    /// <summary>The syncs made, or the reason none were.</summary>
+    /// <summary>The syncs made, or the reason none were. A connect page names its app as <paramref name="connectPageApp"/>.</summary>
     public async Task<(List<Sync>? Syncs, string? Problem)> AddAsync(
         Connection connection,
         Destination destination,
         IReadOnlyList<SyncStreamRequest>? picked,
+        string? connectPageApp,
         CancellationToken ct)
     {
         if (picked is null || picked.Count == 0)
@@ -295,6 +322,15 @@ public sealed partial class SyncMaker(NexusDbContext db, ConnectionMaker connect
         }
 
         db.Syncs.AddRange(syncs);
+        var into = await IntoAsync(destination, ct);
+        foreach (var sync in syncs)
+        {
+            log.Info(
+                $"Sync {sync.Table} was added{LogWords.OnConnectPage(connectPageApp)}. It reads stream {sync.Stream} of {LogWords.Connection(connection, connectors)} {LogWords.Read(sync.Mode, sync.CursorField)}, into {into}.",
+                LogPlace.On(sync, connection),
+                LogWords.ConnectPageActor(connectPageApp));
+        }
+
         await db.SaveChangesAsync(ct);
         foreach (var sync in syncs)
         {
@@ -338,6 +374,24 @@ public sealed partial class SyncMaker(NexusDbContext db, ConnectionMaker connect
             }
         }
 
+        var changes = new List<string>();
+        if (destination.Id != sync.DestinationId)
+        {
+            var before = sync.Destination is { } old ? await IntoAsync(old, ct) : "no destination";
+            changes.Add($"it writes into {await IntoAsync(destination, ct)}, in place of {before}");
+        }
+
+        if (edit.Table != sync.Table)
+        {
+            changes.Add($"its table is {edit.Table}, in place of {sync.Table}");
+        }
+
+        if (readChanged)
+        {
+            changes.Add($"it reads {LogWords.Read(edit.Mode, cursor)}, in place of {LogWords.Read(sync.Mode, sync.CursorField)}");
+        }
+
+        log.Info($"Sync {sync.Table} was changed: {string.Join("; ", changes)}. Its next run reads from the start.", LogPlace.On(sync, sync.Connection!));
         sync.DestinationId = destination.Id;
         sync.Destination = destination;
         sync.Table = edit.Table!;
@@ -348,6 +402,12 @@ public sealed partial class SyncMaker(NexusDbContext db, ConnectionMaker connect
         await db.SaveChangesAsync(ct);
         queue.Enqueue(new PendingRun(sync.Id, 1));
         return null;
+    }
+
+    private async Task<string> IntoAsync(Destination destination, CancellationToken ct)
+    {
+        var app = destination.App ?? await db.Apps.FirstAsync(a => a.Id == destination.AppId, ct);
+        return LogWords.Destination(destination, app.Name);
     }
 
     private static string? Cursor(SyncStreamRequest stream) =>

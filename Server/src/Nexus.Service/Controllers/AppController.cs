@@ -14,7 +14,7 @@ public sealed record CallerAppView(int Id, string Name, string WorkspaceName, IR
 [ApiController]
 [Route("app")]
 [Authorize(Policy = AppKeyHandler.AppPolicy)]
-public sealed class AppController(NexusDbContext db) : ControllerBase
+public sealed class AppController(NexusDbContext db, OperatorLog log) : ControllerBase
 {
     [HttpGet]
     public async Task<CallerAppView> Get(CancellationToken ct)
@@ -30,7 +30,12 @@ public sealed class AppController(NexusDbContext db) : ControllerBase
     [HttpDelete("key")]
     public async Task<IActionResult> RevokeKey(CancellationToken ct)
     {
-        await db.Apps.Where(a => a.Id == User.AppId()).ExecuteUpdateAsync(set => set.SetProperty(a => a.KeyHash, (string?)null).SetProperty(a => a.KeyPrefix, (string?)null).SetProperty(a => a.KeyCreatedAt, (DateTime?)null), ct);
+        var app = await db.Apps.SingleAsync(a => a.Id == User.AppId(), ct);
+        log.Info($"App {app.Name} revoked its own key {app.KeyPrefix}….", LogPlace.In(app.WorkspaceId));
+        app.KeyHash = null;
+        app.KeyPrefix = null;
+        app.KeyCreatedAt = null;
+        await db.SaveChangesAsync(ct);
         return NoContent();
     }
 }

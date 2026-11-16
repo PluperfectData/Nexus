@@ -4,7 +4,7 @@ using Nexus.Service.Storage;
 namespace Nexus.Service.Auth;
 
 /// <summary>The <c>add-admin</c> command's work: an operator's way to make or restore an admin, beside the installer's.</summary>
-public sealed class Admins(NexusDbContext db, LinkMail mail, Instance instance, TimeProvider time)
+public sealed class Admins(NexusDbContext db, LinkMail mail, Instance instance, OperatorLog log, TimeProvider time)
 {
     /// <summary>
     /// Makes an admin, or makes an existing user one, and answers a one-time sign-in link good for an hour, or null
@@ -21,6 +21,7 @@ public sealed class Admins(NexusDbContext db, LinkMail mail, Instance instance, 
         }
 
         user.IsAdmin = true;
+        log.Info($"The add-admin command made {address} an admin, with a sign-in link good for an hour.", LogPlace.Instance);
         await db.SaveChangesAsync(ct);
         return instance.ClientOrigin is null ? null : mail.LinkFor(user, TimeSpan.FromHours(1));
     }

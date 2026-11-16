@@ -30,6 +30,7 @@ public sealed partial class AuthController(
     Instance instance,
     SignInThrottle throttle,
     IAntiforgery antiforgery,
+    OperatorLog log,
     ILogger<AuthController> logger) : ControllerBase
 {
     private const string Refused = "That email and password do not match.";
@@ -73,6 +74,15 @@ public sealed partial class AuthController(
         if (!matches)
         {
             throttle.RecordFailure(email);
+            if (user is not null && throttle.IsLockedOut(email))
+            {
+                log.Warn(
+                    $"Signing in with a password as {email} is locked for 15 minutes, after {SignInThrottle.MaxFailures} wrong passwords in a row. A mailed link still works.",
+                    LogPlace.Instance,
+                    email);
+                await db.SaveChangesAsync(ct);
+            }
+
             return Problem(Refused, statusCode: StatusCodes.Status401Unauthorized);
         }
 
@@ -112,6 +122,8 @@ public sealed partial class AuthController(
             catch (MailDeliveryException ex)
             {
                 LogUndelivered(logger, ex, email);
+                log.Warn($"A sign-in link could not be mailed to {email}: {ex.Message}", LogPlace.Instance, email);
+                await db.SaveChangesAsync(ct);
             }
         }
 
@@ -159,6 +171,7 @@ public sealed partial class AuthController(
 
         var user = await db.Users.FirstAsync(u => u.Id == User.UserId(), ct);
         user.PasswordHash = Passwords.Hash(user, request.Password!);
+        log.Info($"{user.Email} set a new password, which ended their other sessions.", LogPlace.Instance);
         await db.SaveChangesAsync(ct);
         await sessions.EndAllAsync(user, "The password changed.", ct);
         await sessions.SignInAsync(user, persistent: false, ct);

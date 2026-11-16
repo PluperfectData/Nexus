@@ -218,6 +218,53 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("destinations", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.LogEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Actor")
+                        .HasMaxLength(204)
+                        .HasColumnType("varchar(204)");
+
+                    b.Property<DateTime>("At")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("ConnectionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
+                    b.Property<int?>("SyncId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
+                    b.Property<int?>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("At");
+
+                    b.HasIndex("ConnectionId");
+
+                    b.HasIndex("SyncId");
+
+                    b.HasIndex("WorkspaceId", "Id");
+
+                    b.ToTable("log_entries", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.Pairing", b =>
                 {
                     b.Property<long>("Id")
@@ -668,6 +715,30 @@ namespace Nexus.Service.Storage.Migrations
                         .IsRequired();
 
                     b.Navigation("App");
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.LogEntry", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Nexus.Service.Storage.Sync", "Sync")
+                        .WithMany()
+                        .HasForeignKey("SyncId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Connection");
+
+                    b.Navigation("Sync");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.ProviderApp", b =>

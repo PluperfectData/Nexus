@@ -61,6 +61,8 @@ const settings: Settings = {
   },
   database: { host: 'localhost', port: 3306, name: 'nexus', user: 'nexus' },
   databaseConfigured: false,
+  logDays: 30,
+  logDaysConfigured: false,
 }
 
 function renderPage(setMe = jest.fn()) {

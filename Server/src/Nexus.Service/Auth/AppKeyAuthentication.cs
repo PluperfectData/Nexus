@@ -19,6 +19,9 @@ public sealed class AppKeyHandler(IOptionsMonitor<AuthenticationSchemeOptions> o
 
     public const string AppClaim = "nexus:app";
 
+    /// <summary>The calling app's name, which the operator log names it by.</summary>
+    public const string AppNameClaim = "nexus:app-name";
+
     /// <summary>Signed-in users and apps both reach these routes, each by its own credential.</summary>
     public const string UserOrAppPolicy = "user-or-app";
 
@@ -38,7 +41,9 @@ public sealed class AppKeyHandler(IOptionsMonitor<AuthenticationSchemeOptions> o
             return AuthenticateResult.Fail("The app key is not one this service made, or it was revoked.");
         }
 
-        var identity = new ClaimsIdentity([new Claim(AppClaim, app.Id.ToString(CultureInfo.InvariantCulture))], SchemeName);
+        var identity = new ClaimsIdentity(
+            [new Claim(AppClaim, app.Id.ToString(CultureInfo.InvariantCulture)), new Claim(AppNameClaim, app.Name)],
+            SchemeName);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName));
     }
 }

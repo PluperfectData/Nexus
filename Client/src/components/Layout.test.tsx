@@ -17,17 +17,18 @@ const renderWith = (me: Me | null, element = <Layout />, setMe = jest.fn()) =>
 
 beforeEach(() => jest.clearAllMocks())
 
-it('shows Users and Settings in the nav to an admin only, and keeps the account out of the nav', () => {
+it('shows Users and Settings in the nav to an admin only, Log to everyone, and keeps the account out of the nav', () => {
   const { unmount } = renderWith(member)
   const nav = screen.getByRole('navigation', { name: 'Main' })
   expect(within(nav).queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
   expect(within(nav).queryByRole('link', { name: 'Account' })).not.toBeInTheDocument()
+  expect(within(nav).getByRole('link', { name: 'Log' })).toHaveAttribute('href', '/log')
   unmount()
 
   renderWith({ ...member, isAdmin: true })
   const adminNav = screen.getByRole('navigation', { name: 'Main' })
-  expect(within(adminNav).getByRole('link', { name: 'Users' })).toBeInTheDocument()
+  expect(within(adminNav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Workspaces', 'Users', 'Settings', 'Log'])
   expect(within(adminNav).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
 })
 

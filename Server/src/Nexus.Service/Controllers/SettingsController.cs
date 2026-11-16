@@ -12,6 +12,8 @@ public sealed record AddressesRequest(string? ClientOrigin, string? CallbackOrig
 
 public sealed record MailSettingsRequest(string? ServerToken, string? From, string? FromName);
 
+public sealed record LogSettingsRequest(int? Days);
+
 /// <summary>
 /// How the instance sends mail. The server token is never answered, only whether one is set. A field set by the
 /// service's configuration is shown, and the page cannot change it.
@@ -35,7 +37,9 @@ public sealed record SettingsView(
     string CallbackSuggestion,
     MailView Mail,
     DatabaseView? Database,
-    bool DatabaseConfigured);
+    bool DatabaseConfigured,
+    int LogDays,
+    bool LogDaysConfigured);
 
 public sealed record TestMailView(string SentTo, MailTransport Transport, string? Folder);
 
@@ -43,7 +47,7 @@ public sealed record TestMailView(string SentTo, MailTransport Transport, string
 [ApiController]
 [Route("settings")]
 [Authorize(Policy = NexusClaims.AdminPolicy)]
-public sealed class SettingsController(Instance instance, Installation installation, IMailer mailer, IServer server) : ControllerBase
+public sealed class SettingsController(Instance instance, Installation installation, IMailer mailer, IServer server, IServiceScopeFactory scopes) : ControllerBase
 {
     private const int MaxNameLength = 100;
 
@@ -51,7 +55,7 @@ public sealed class SettingsController(Instance instance, Installation installat
     public SettingsView Get() => View();
 
     [HttpPut("addresses")]
-    public ActionResult<SettingsView> Addresses(AddressesRequest request)
+    public async Task<ActionResult<SettingsView>> Addresses(AddressesRequest request, CancellationToken ct)
     {
         var client = Origins.Parse(request.ClientOrigin);
         if (client is null)
@@ -75,6 +79,7 @@ public sealed class SettingsController(Instance instance, Installation installat
             return Problem("The callback address is set by the service's configuration, in Nexus:CallbackOrigin.", statusCode: StatusCodes.Status409Conflict);
         }
 
+        var changed = client != instance.ClientOrigin || callback != instance.CallbackOrigin;
         if (!instance.ClientOriginConfigured)
         {
             instance.File.SaveClientOrigin(client);
@@ -85,12 +90,18 @@ public sealed class SettingsController(Instance instance, Installation installat
             instance.File.SaveCallbackOrigin(callback);
         }
 
+        if (changed)
+        {
+            var comesBack = instance.CallbackOrigin is { } origin ? $"sign-ins come back to {origin}" : "no callback address is set, so no sign-in can come back";
+            await NoteAsync(log => log.Info($"The addresses were changed: the client is at {instance.ClientOrigin}, and {comesBack}.", LogPlace.Instance), ct);
+        }
+
         return View();
     }
 
     /// <summary>Sets Postmark's server token and the sender. A blank token keeps the one stored.</summary>
     [HttpPut("mail")]
-    public ActionResult<SettingsView> Mail(MailSettingsRequest request)
+    public async Task<ActionResult<SettingsView>> Mail(MailSettingsRequest request, CancellationToken ct)
     {
         var token = string.IsNullOrWhiteSpace(request.ServerToken) ? null : request.ServerToken.Trim();
         if (instance.ServerTokenConfigured && token is not null)
@@ -116,14 +127,46 @@ public sealed class SettingsController(Instance instance, Installation installat
         }
 
         instance.File.SaveMail(token, from, name);
+        var tokenSaid = token is null ? string.Empty : ", with a new server token";
+        await NoteAsync(log => log.Info($"Mail was set to go through Postmark, from {instance.MailFromName} at {instance.Sender}{tokenSaid}.", LogPlace.Instance), ct);
         return View();
     }
 
     /// <summary>Forgets the stored token and sender, which turns mail off unless configuration sets it.</summary>
     [HttpDelete("mail")]
-    public SettingsView TurnOffMail()
+    public async Task<SettingsView> TurnOffMail(CancellationToken ct)
     {
         instance.File.ClearMail();
+        await NoteAsync(
+            log => log.Info(
+                instance.MailReady ? "The stored mail settings were removed. Mail still goes out as the service's configuration sets it." : "Mail was turned off.",
+                LogPlace.Instance),
+            ct);
+        return View();
+    }
+
+    /// <summary>Sets how many days the operator log keeps an entry.</summary>
+    [HttpPut("log")]
+    public async Task<ActionResult<SettingsView>> Log(LogSettingsRequest request, CancellationToken ct)
+    {
+        if (instance.LogDaysConfigured)
+        {
+            return Problem("How long the log keeps entries is set by the service's configuration, in Nexus:LogDays.", statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (request.Days is not { } days || days < Instance.MinLogDays || days > Instance.MaxLogDays)
+        {
+            return Problem(
+                $"The log keeps entries for {Instance.MinLogDays} to {Instance.MaxLogDays} days.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (days != instance.LogDays)
+        {
+            instance.File.SaveLogDays(days);
+            await NoteAsync(log => log.Info($"The log now keeps entries for {Days(days)}.", LogPlace.Instance), ct);
+        }
+
         return View();
     }
 
@@ -152,9 +195,11 @@ public sealed class SettingsController(Instance instance, Installation installat
         }
         catch (MailDeliveryException ex)
         {
+            await NoteAsync(log => log.Warn($"A test mail to {to} failed: {ex.Message}", LogPlace.Instance), ct);
             return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
         }
 
+        await NoteAsync(log => log.Info($"A test mail was sent to {to}.", LogPlace.Instance), ct);
         return new TestMailView(to, instance.Transport, instance.Transport == MailTransport.Files ? Path.GetFullPath(instance.MailFolder!) : null);
     }
 
@@ -173,12 +218,28 @@ public sealed class SettingsController(Instance instance, Installation installat
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        var before = instance.File.DatabasePlace;
         if (await installation.UseDatabaseAsync(settings!, ct) is { } failed)
         {
             return Problem(failed, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        // Written through a new scope, whose context opens the database just switched to.
+        var said = before is not null && before.SamePlace(settings!)
+            ? $"The service now signs in to its database, {settings!.Name} on {settings.Host}:{settings.Port}, as {settings.User}."
+            : $"The service moved to database {settings!.Name} on {settings.Host}:{settings.Port}, signing in as {settings.User}.";
+        await NoteAsync(log => log.Info(said, LogPlace.Instance), ct);
         return View();
+    }
+
+    private static string Days(int days) => days == 1 ? "1 day" : $"{days} days";
+
+    // Settings live outside the database, so each entry is saved on its own, through a context of its own.
+    private async Task NoteAsync(Action<OperatorLog> write, CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        write(scope.ServiceProvider.GetRequiredService<OperatorLog>());
+        await scope.ServiceProvider.GetRequiredService<Storage.NexusDbContext>().SaveChangesAsync(ct);
     }
 
     private SettingsView View()
@@ -202,7 +263,9 @@ public sealed class SettingsController(Instance instance, Installation installat
                 instance.MailFromNameConfigured,
                 instance.MailFolder is { } folder ? Path.GetFullPath(folder) : null),
             place is null ? null : new DatabaseView(place.Host, place.Port, place.Name, place.User),
-            configured is not null);
+            configured is not null,
+            instance.LogDays,
+            instance.LogDaysConfigured);
     }
 
     // The service's own https address, where it listens on one, and otherwise the https form of the address this request came to.

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { getInstall, getSettings, type InstallView, type Me, saveAddresses, saveDatabase, type Settings, testMail } from '../api'
+import { getInstall, getSettings, type InstallView, type Me, saveAddresses, saveDatabase, saveLogDays, type Settings, testMail } from '../api'
 import { SessionContext } from '../session'
 import { SettingsPage } from './SettingsPage'
 
@@ -14,6 +14,7 @@ jest.mock('../api', () => ({
   saveMail: jest.fn(),
   testMail: jest.fn(),
   saveDatabase: jest.fn(),
+  saveLogDays: jest.fn(),
   getInstall: jest.fn(),
 }))
 
@@ -38,6 +39,8 @@ const settings: Settings = {
   },
   database: { host: 'localhost', port: 3306, name: 'nexus', user: 'nexus' },
   databaseConfigured: false,
+  logDays: 30,
+  logDaysConfigured: false,
 }
 
 const notInstalled: InstallView = {
@@ -63,6 +66,28 @@ beforeEach(() => {
   jest.clearAllMocks()
   jest.restoreAllMocks()
   jest.mocked(getSettings).mockResolvedValue(settings)
+})
+
+it('saves how many days the log keeps an entry', async () => {
+  jest.mocked(saveLogDays).mockResolvedValue({ ...settings, logDays: 90 })
+  renderAs(admin)
+
+  const days = await screen.findByLabelText('Keep entries for this many days')
+  expect(days).toHaveValue(30)
+  await userEvent.clear(days)
+  await userEvent.type(days, '90')
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(saveLogDays).toHaveBeenCalledWith(90)
+  expect(await screen.findByText('Saved.')).toBeInTheDocument()
+})
+
+it('shows the days a configured instance keeps, with nothing to change', async () => {
+  jest.mocked(getSettings).mockResolvedValue({ ...settings, logDays: 7, logDaysConfigured: true })
+  renderAs(admin)
+
+  expect(await screen.findByText("The service's configuration keeps log entries for 7 days, in Nexus:LogDays.")).toBeInTheDocument()
+  expect(screen.queryByLabelText('Keep entries for this many days')).not.toBeInTheDocument()
 })
 
 it('starts the callback from the service, saves the addresses, and shows the callback to register', async () => {

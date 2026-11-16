@@ -69,8 +69,14 @@ public sealed record StreamView(
 /// one reads, and remove it.
 /// </summary>
 [ApiController]
-public sealed class ConnectionsController(NexusDbContext db, Access access, ConnectionMaker maker, ConnectionFiles files, PendingRuns queue)
-    : ControllerBase
+public sealed class ConnectionsController(
+    NexusDbContext db,
+    Access access,
+    ConnectionMaker maker,
+    ConnectionFiles files,
+    PendingRuns queue,
+    SourceConnectors connectors,
+    OperatorLog log) : ControllerBase
 {
     [HttpGet("workspaces/{workspaceId:int}/connections")]
     public async Task<ActionResult<IEnumerable<ConnectionView>>> List(int workspaceId, CancellationToken ct)
@@ -94,7 +100,7 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
             return NotFound();
         }
 
-        return Made(await maker.AddAsync(workspaceId, request.Name, request.Connector, request.Settings, null, ct));
+        return Made(await maker.AddAsync(workspaceId, request.Name, request.Connector, request.Settings, null, null, ct));
     }
 
     /// <summary>Adds a connection that reads a file, such as CSV, once the connector reads the file uploaded with it.</summary>
@@ -117,7 +123,7 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
         var (file, refused) = await files.SaveAsync(form.File, ct);
         return file is null
             ? Problem(refused, statusCode: StatusCodes.Status400BadRequest)
-            : Made(await maker.AddAsync(workspaceId, form.Name, form.Connector, settings, file, ct));
+            : Made(await maker.AddAsync(workspaceId, form.Name, form.Connector, settings, file, null, ct));
     }
 
     /// <summary>
@@ -193,7 +199,16 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
             return Problem("A sync from this connection is running. Wait for it to end, then remove it.", statusCode: StatusCodes.Status409Conflict);
         }
 
+        var syncs = await db.Syncs.CountAsync(s => s.ConnectionId == id, ct);
         db.Connections.Remove(connection);
+        log.Info(
+            syncs switch
+            {
+                0 => $"Connection {LogWords.Connection(connection, connectors)} was removed.",
+                1 => $"Connection {LogWords.Connection(connection, connectors)} was removed, with its sync. The table it wrote stays at its destination.",
+                _ => $"Connection {LogWords.Connection(connection, connectors)} was removed, with its {syncs} syncs. The tables they wrote stay at their destinations.",
+            },
+            LogPlace.In(connection.WorkspaceId));
         await db.SaveChangesAsync(ct);
         files.Delete(connection.StoredFile);
         return NoContent();

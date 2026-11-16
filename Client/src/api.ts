@@ -376,6 +376,9 @@ export interface Settings {
   mail: MailSettings
   database: DatabasePlace | null
   databaseConfigured: boolean
+  /** How many days the log keeps an entry. */
+  logDays: number
+  logDaysConfigured: boolean
 }
 
 export interface TestMail {
@@ -410,6 +413,48 @@ export const saveMail = (serverToken: string, from: string, fromName: string) =>
 export const turnOffMail = () => request<Settings>('/settings/mail', 'DELETE')
 export const testMail = () => request<TestMail>('/settings/mail/test', 'POST')
 export const saveDatabase = (database: DatabaseForm) => request<Settings>('/settings/database', 'PUT', database)
+export const saveLogDays = (days: number) => request<Settings>('/settings/log', 'PUT', { days })
+
+export type EntryLevel = 'Information' | 'Warning' | 'Error'
+
+/** Something that happened, in a sentence. `workspaceId` is null for an entry about the whole instance. */
+export interface LogEntry {
+  id: number
+  at: string
+  level: EntryLevel
+  text: string
+  actor: string | null
+  workspaceId: number | null
+  workspaceName: string | null
+  connectionId: number | null
+  syncId: number | null
+}
+
+/** A page of entries, newest first. `next` reads the older ones; `subject` names the connection or sync filtered by. */
+export interface LogEntries {
+  entries: LogEntry[]
+  next: number | null
+  subject: string | null
+}
+
+/** `instance` picks the entries about the whole instance; `level: 'Warning'` keeps warnings and errors. */
+export interface LogFilter {
+  workspace?: number
+  instance?: boolean
+  connection?: number
+  sync?: number
+  level?: 'Warning'
+  before?: number
+}
+
+export function getLog(filter: LogFilter) {
+  const query = new URLSearchParams()
+  for (const [name, value] of Object.entries(filter)) {
+    if (value !== undefined && value !== false) query.set(name, String(value))
+  }
+  const text = query.toString()
+  return request<LogEntries>(text ? `/log?${text}` : '/log')
+}
 
 export const getPairing = (id: string) => request<Pairing>(`/pairings/${encodeURIComponent(id)}`)
 export const approvePairing = (id: string, workspaceId: number) =>
