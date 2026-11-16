@@ -147,7 +147,7 @@ public sealed class AdminApiTests
         (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/members/{memberId}")).EnsureSuccessStatusCode();
         _factory.Source.Rows.AddRange([[1L, "pen"], [2L, "ink"]]);
 
-        var fake = (await member.GetAsync<JsonElement>("/connectors")).EnumerateArray().Single();
+        var fake = (await member.GetAsync<JsonElement>("/connectors")).EnumerateArray().Single(c => c.GetProperty("id").GetString() == FakeSource.Id);
         fake.GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ShouldBe(["host", "password"]);
         using var unreachable = await member.SendAsync(
             HttpMethod.Post, $"/workspaces/{workspace}/connections", new { name = "Shop", connector = FakeSource.Id, settings = new { host = FakeSource.Unreachable } });

@@ -32,6 +32,9 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     public string MailDirectory => Path.Combine(DataDirectory, "mail");
 
+    /// <summary>How many files connections hold in the service's files directory.</summary>
+    public int StoredFileCount => Directory.Exists(Path.Combine(DataDirectory, "files")) ? Directory.GetFiles(Path.Combine(DataDirectory, "files")).Length : 0;
+
     /// <summary>Every line the service logged, as written.</summary>
     internal LogCapture Logs { get; } = new();
 
@@ -97,7 +100,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDbContextOptionsConfiguration<NexusDbContext>>();
             services.AddDbContext<NexusDbContext>(options => options.UseSqlite(SqliteConnectionString));
             services.RemoveAll<SourceConnectors>();
-            services.AddSingleton(new SourceConnectors([Source]));
+            services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource()]));
             services.RemoveAll<HttpRetryOptions>();
             services.AddSingleton(new HttpRetryOptions { MaxAttempts = 1 });
             services.RemoveAll<RetryPolicy>();

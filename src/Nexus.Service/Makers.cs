@@ -5,15 +5,105 @@ using Nexus.Service.Storage;
 
 namespace Nexus.Service;
 
-/// <summary>Adds a connection once its settings connect, for a workspace's members and for connect pages alike.</summary>
-public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connectors, Secrets secrets, TimeProvider time)
+/// <summary>
+/// Adds a connection once its settings connect, for a workspace's members and for connect pages alike, and builds the
+/// config a connector reads a connection with.
+/// </summary>
+public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connectors, ConnectionFiles files, Secrets secrets, TimeProvider time)
 {
-    /// <summary>The connection made, or the reason none was.</summary>
+    /// <summary>
+    /// The connection made, or the reason none was. A connector that reads a file takes it as <paramref name="file"/>,
+    /// already saved, which becomes the connection's own; on a refusal the file is deleted.
+    /// </summary>
     public async Task<(Connection? Connection, string? Problem)> AddAsync(
         int workspaceId,
         string? name,
         string? connectorId,
         IReadOnlyDictionary<string, string?>? given,
+        UploadedFile? file,
+        CancellationToken ct)
+    {
+        var (connection, problem) = await MakeAsync(workspaceId, name, connectorId, given, file, ct);
+        if (connection is null)
+        {
+            files.Delete(file?.StoredFile);
+        }
+
+        return (connection, problem);
+    }
+
+    /// <summary>The config a connector reads the connection with: its settings, its tokens, and its file.</summary>
+    public ConnectorConfig ConfigOf(Connection connection) =>
+        new(
+            secrets.Unprotect(connection.Settings),
+            Tokens: secrets.UnprotectTokens(connection.Tokens),
+            Files: FilesOf(connectors.Find(connection.Connector), connection.FileName, connection.StoredFile));
+
+    /// <summary>
+    /// Replaces the connection's file with <paramref name="file"/> once the connector reads it, deleting the old copy.
+    /// Answers why it did not, deleting the new copy instead.
+    /// </summary>
+    public async Task<string?> ReplaceFileAsync(Connection connection, UploadedFile file, CancellationToken ct)
+    {
+        if (connectors.Find(connection.Connector) is not { } connector || SourceConnectors.FileFieldOf(connector) is null)
+        {
+            files.Delete(file.StoredFile);
+            return "This connection reads no file.";
+        }
+
+        var check = await connector.CheckAsync(ConfigOf(connection) with { Files = FilesOf(connector, file.FileName, file.StoredFile) }, ct);
+        if (!check.Succeeded)
+        {
+            files.Delete(file.StoredFile);
+            return check.Message;
+        }
+
+        var old = connection.StoredFile;
+        connection.FileName = file.FileName;
+        connection.StoredFile = file.StoredFile;
+        await db.SaveChangesAsync(ct);
+        files.Delete(old);
+        return null;
+    }
+
+    /// <summary>The connection with every setting but its secrets, and the name of its file.</summary>
+    public ConnectionView ViewOf(Connection connection)
+    {
+        var shown = connectors.Find(connection.Connector)?.Spec.Fields
+            .Where(f => f.Kind is not (SettingKind.Secret or SettingKind.File))
+            .Select(f => f.Name)
+            .ToHashSet(StringComparer.Ordinal) ?? [];
+        var settings = secrets.Unprotect(connection.Settings)
+            .Where(setting => shown.Contains(setting.Key))
+            .ToDictionary(setting => setting.Key, setting => setting.Value);
+        return new ConnectionView(
+            connection.Id, connection.Name, connection.Connector, settings, connection.FileName, connection.NeedsSignIn, connection.CreatedAt);
+    }
+
+    /// <summary>The streams the connection's source offers now.</summary>
+    public async Task<(SourceCatalog? Catalog, string? Problem)> DiscoverAsync(Connection connection, CancellationToken ct)
+    {
+        if (connectors.Find(connection.Connector) is not { } connector)
+        {
+            return (null, $"'{connection.Connector}' is not a connector the service reads.");
+        }
+
+        try
+        {
+            return (await connector.DiscoverAsync(ConfigOf(connection), ct), null);
+        }
+        catch (ConnectorException ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    private async Task<(Connection? Connection, string? Problem)> MakeAsync(
+        int workspaceId,
+        string? name,
+        string? connectorId,
+        IReadOnlyDictionary<string, string?>? given,
+        UploadedFile? file,
         CancellationToken ct)
     {
         var trimmed = name?.Trim() ?? string.Empty;
@@ -27,16 +117,27 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
             return (null, $"'{connectorId}' is not a connector the service reads.");
         }
 
+        var fileField = SourceConnectors.FileFieldOf(connector);
+        if (fileField is null && file is not null)
+        {
+            return (null, $"{connector.Spec.DisplayName} reads no file.");
+        }
+
+        if (fileField is { Required: true } && file is null)
+        {
+            return (null, $"{fileField.Label} is required.");
+        }
+
         given ??= new Dictionary<string, string?>();
-        var settings = connector.Spec.Fields.ToDictionary(
+        var settings = connector.Spec.Fields.Where(field => field.Kind != SettingKind.File).ToDictionary(
             field => field.Name,
             field => given.TryGetValue(field.Name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null);
-        if (connector.Spec.Fields.FirstOrDefault(field => field.Required && settings[field.Name] is null) is { } missing)
+        if (connector.Spec.Fields.FirstOrDefault(field => field.Required && field.Kind != SettingKind.File && settings[field.Name] is null) is { } missing)
         {
             return (null, $"{missing.Label} is required.");
         }
 
-        var check = await connector.CheckAsync(new ConnectorConfig(settings), ct);
+        var check = await connector.CheckAsync(new ConnectorConfig(settings, Files: FilesOf(connector, file?.FileName, file?.StoredFile)), ct);
         if (!check.Succeeded)
         {
             return (null, check.Message);
@@ -48,6 +149,8 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
             Name = trimmed,
             Connector = connector.Spec.Id,
             Settings = secrets.Protect(settings),
+            FileName = file?.FileName,
+            StoredFile = file?.StoredFile,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.Connections.Add(connection);
@@ -55,37 +158,10 @@ public sealed class ConnectionMaker(NexusDbContext db, SourceConnectors connecto
         return (connection, null);
     }
 
-    /// <summary>The connection with every setting but its secrets.</summary>
-    public ConnectionView ViewOf(Connection connection)
-    {
-        var shown = connectors.Find(connection.Connector)?.Spec.Fields
-            .Where(f => f.Kind is not (SettingKind.Secret or SettingKind.File))
-            .Select(f => f.Name)
-            .ToHashSet(StringComparer.Ordinal) ?? [];
-        var settings = secrets.Unprotect(connection.Settings)
-            .Where(setting => shown.Contains(setting.Key))
-            .ToDictionary(setting => setting.Key, setting => setting.Value);
-        return new ConnectionView(connection.Id, connection.Name, connection.Connector, settings, connection.NeedsSignIn, connection.CreatedAt);
-    }
-
-    /// <summary>The streams the connection's source offers now.</summary>
-    public async Task<(SourceCatalog? Catalog, string? Problem)> DiscoverAsync(Connection connection, CancellationToken ct)
-    {
-        if (connectors.Find(connection.Connector) is not { } connector)
-        {
-            return (null, $"'{connection.Connector}' is not a connector the service reads.");
-        }
-
-        try
-        {
-            var config = new ConnectorConfig(secrets.Unprotect(connection.Settings), Tokens: secrets.UnprotectTokens(connection.Tokens));
-            return (await connector.DiscoverAsync(config, ct), null);
-        }
-        catch (ConnectorException ex)
-        {
-            return (null, ex.Message);
-        }
-    }
+    private Dictionary<string, ConnectorFile>? FilesOf(ISourceConnector? connector, string? fileName, string? stored) =>
+        connector is not null && SourceConnectors.FileFieldOf(connector) is { } field && stored is not null
+            ? new Dictionary<string, ConnectorFile> { [field.Name] = files.Open(fileName ?? stored, stored) }
+            : null;
 }
 
 /// <summary>Adds syncs from a connection's streams into a destination, and queues the first run of each.</summary>

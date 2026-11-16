@@ -34,7 +34,7 @@ public sealed class CsvSource : ISourceConnector
         [
             new SettingField(FileSetting, "CSV file", SettingKind.File, Required: true),
             new SettingField(StreamSetting, "Table name", SettingKind.Text, Required: true),
-            new SettingField(HeaderSetting, "First row holds column names", SettingKind.Boolean, Required: false),
+            new SettingField(HeaderSetting, "First row holds column names", SettingKind.Boolean, Required: false, Default: "true"),
             new SettingField(DelimiterSetting, "Delimiter", SettingKind.Choice, Required: false, CsvSettings.Delimiters),
         ]);
 

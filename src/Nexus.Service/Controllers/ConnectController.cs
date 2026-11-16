@@ -31,8 +31,13 @@ public sealed record ConnectEnd(string ReturnUrl);
 [Route("connect")]
 [AllowAnonymous]
 [SkipAntiforgery]
-public sealed class ConnectController(NexusDbContext db, SourceConnectors connectors, ConnectionMaker connections, SyncMaker syncs, TimeProvider time)
-    : ControllerBase
+public sealed class ConnectController(
+    NexusDbContext db,
+    SourceConnectors connectors,
+    ConnectionMaker connections,
+    ConnectionFiles files,
+    SyncMaker syncs,
+    TimeProvider time) : ControllerBase
 {
     private const string Ended = "This connect page has expired or is finished. Go back to the app and start again.";
 
@@ -42,19 +47,46 @@ public sealed class ConnectController(NexusDbContext db, SourceConnectors connec
 
     /// <summary>Makes the page's one connection, once its settings connect.</summary>
     [HttpPost("connection")]
-    public async Task<ActionResult<ConnectView>> Connect(ConnectConnectionRequest request, CancellationToken ct)
+    [Consumes("application/json")]
+    public Task<ActionResult<ConnectView>> Connect(ConnectConnectionRequest request, CancellationToken ct) =>
+        ConnectAsync(request.Name, request.Settings, null, ct);
+
+    /// <summary>Makes the page's one connection from an upload, for a connector that reads a file, such as CSV.</summary>
+    [HttpPost("connection")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    public async Task<ActionResult<ConnectView>> ConnectWithFile([FromForm] FileConnectionForm form, CancellationToken ct)
+    {
+        if (form.ParsedSettings() is not { } settings)
+        {
+            return Problem("Send the settings as a JSON object of text.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (await SessionAsync(ct) is null)
+        {
+            return Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
+        }
+
+        var (file, refused) = await files.SaveAsync(form.File, ct);
+        return file is null ? Problem(refused, statusCode: StatusCodes.Status400BadRequest) : await ConnectAsync(form.Name, settings, file, ct);
+    }
+
+    private async Task<ActionResult<ConnectView>> ConnectAsync(string? name, IReadOnlyDictionary<string, string?>? settings, UploadedFile? file, CancellationToken ct)
     {
         if (await SessionAsync(ct) is not { } session)
         {
+            files.Delete(file?.StoredFile);
             return Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
         }
 
         if (session.ConnectionId is not null)
         {
+            files.Delete(file?.StoredFile);
             return Problem("This page has made its connection. Pick its streams next.", statusCode: StatusCodes.Status409Conflict);
         }
 
-        var (connection, problem) = await connections.AddAsync(session.App!.WorkspaceId, request.Name, session.Connector, request.Settings, ct);
+        var (connection, problem) = await connections.AddAsync(session.App!.WorkspaceId, name, session.Connector, settings, file, ct);
         if (connection is null)
         {
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);

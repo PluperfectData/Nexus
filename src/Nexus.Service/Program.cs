@@ -28,7 +28,8 @@ var secureOrigin = !builder.Environment.IsDevelopment();
 
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton(SourceConnectors.Databases());
+builder.Services.AddSingleton(SourceConnectors.Defaults());
+builder.Services.AddSingleton(new ConnectionFiles(Path.Combine(builder.Environment.ContentRootPath, settings.DataDirectory, "files")));
 builder.Services.AddSingleton(HttpRetryOptions.Default);
 builder.Services.AddSingleton(RetryPolicy.Default);
 builder.Services.AddHttpClient(PushClient);

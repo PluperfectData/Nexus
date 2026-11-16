@@ -43,6 +43,16 @@ public sealed partial class Browser(HttpClient client, CookieContainer cookies) 
         return await Client.SendAsync(request);
     }
 
+    /// <summary>Sends a multipart form, such as one carrying a file, as the client's pages do.</summary>
+    public async Task<HttpResponseMessage> SendFormAsync(HttpMethod method, string path, MultipartFormDataContent form)
+    {
+        using var request = new HttpRequestMessage(method, path) { Content = form };
+        var token = await Client.GetFromJsonAsync<JsonElement>("/auth/csrf");
+        request.Headers.Add("X-CSRF-TOKEN", token.GetProperty("token").GetString());
+        request.Headers.Add("Origin", ServiceFactory.ClientOrigin);
+        return await Client.SendAsync(request);
+    }
+
     public async Task<T> SendAsync<T>(HttpMethod method, string path, object? body = null)
     {
         using var response = await SendAsync(method, path, body);

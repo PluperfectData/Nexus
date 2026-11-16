@@ -24,8 +24,8 @@ const opened: ConnectView = {
     description: 'Reads tables from MySQL.',
     auth: 'ConnectionFields',
     fields: [
-      { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null },
-      { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null },
+      { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null, default: null },
+      { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null, default: null },
     ],
   },
   destinationUrl: 'http://localhost:6161/ingest',
@@ -35,12 +35,41 @@ const opened: ConnectView = {
 
 const connected: ConnectView = {
   ...opened,
-  connection: { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, needsSignIn: false, createdAt: '2026-11-15T12:01:00Z' },
+  connection: { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, needsSignIn: false, createdAt: '2026-11-15T12:01:00Z' },
 }
 
 beforeEach(() => {
   jest.clearAllMocks()
   window.location.hash = '#nxc_the-token'
+})
+
+it("uploads the file a CSV connector reads, starting from its settings' defaults", async () => {
+  jest.mocked(getConnect).mockResolvedValue({
+    ...opened,
+    connector: {
+      id: 'csv',
+      name: 'CSV',
+      description: 'Reads a CSV file.',
+      auth: 'FileUpload',
+      fields: [
+        { name: 'file', label: 'CSV file', kind: 'File', required: true, choices: null, default: null },
+        { name: 'stream', label: 'Table name', kind: 'Text', required: true, choices: null, default: null },
+        { name: 'header', label: 'First row holds column names', kind: 'Boolean', required: false, choices: null, default: 'true' },
+      ],
+    },
+  })
+  jest.mocked(connectConnection).mockResolvedValue(connected)
+  jest.mocked(connectStreams).mockResolvedValue([])
+  const file = new File(['id,item\n1,pen\n'], 'orders.csv', { type: 'text/csv' })
+  render(<ConnectPage />)
+
+  await userEvent.type(await screen.findByLabelText('Name'), 'Orders')
+  await userEvent.upload(screen.getByLabelText('CSV file'), file)
+  await userEvent.type(screen.getByLabelText('Table name'), 'orders')
+  expect(screen.getByLabelText('First row holds column names')).toBeChecked()
+  await userEvent.click(screen.getByRole('button', { name: 'Connect' }))
+
+  expect(connectConnection).toHaveBeenCalledWith('nxc_the-token', 'Orders', { header: 'true', stream: 'orders' }, file)
 })
 
 it('connects with the settings its connector asks for, then sends the picked streams and goes back to the app', async () => {
@@ -58,7 +87,7 @@ it('connects with the settings its connector asks for, then sends the picked str
   await userEvent.type(screen.getByLabelText('Host'), 'db.test')
   await userEvent.type(screen.getByLabelText('Password'), 'hunter2')
   await userEvent.click(screen.getByRole('button', { name: 'Connect' }))
-  expect(connectConnection).toHaveBeenCalledWith('nxc_the-token', 'Shop', { host: 'db.test', password: 'hunter2' })
+  expect(connectConnection).toHaveBeenCalledWith('nxc_the-token', 'Shop', { host: 'db.test', password: 'hunter2' }, undefined)
 
   await userEvent.click(await screen.findByLabelText('shop.orders'))
   expect(screen.getByLabelText('Table')).toHaveValue('shop_orders')

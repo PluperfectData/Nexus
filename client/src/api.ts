@@ -39,9 +39,26 @@ async function read<T>(response: Response): Promise<T> {
 
 const request = async <T>(path: string, method = 'GET', body?: unknown): Promise<T> => read<T>(await authFetch(path, init(method, body)))
 
+// A form carrying a file sets its own multipart content type, so none is set here.
+const formRequest = async <T>(path: string, method: string, form: FormData): Promise<T> =>
+  read<T>(await authFetch(path, { method, headers: { accept: 'application/json' }, body: form }))
+
 // A connect page has no session: its token is its only credential, so it goes in a header on a plain fetch.
 const connectRequest = async <T>(token: string, path: string, method = 'GET', body?: unknown): Promise<T> =>
   read<T>(await fetch(`${apiUrl}${path}`, init(method, body, { authorization: `Bearer ${token}` })))
+
+const connectForm = async <T>(token: string, path: string, form: FormData): Promise<T> =>
+  read<T>(await fetch(`${apiUrl}${path}`, { method: 'POST', headers: { accept: 'application/json', authorization: `Bearer ${token}` }, body: form }))
+
+/** A connection's name, connector, settings, and file, as the service takes them from a form. */
+function connectionForm(name: string, settings: Record<string, string>, file: File, connector?: string): FormData {
+  const form = new FormData()
+  form.append('name', name)
+  if (connector) form.append('connector', connector)
+  form.append('settings', JSON.stringify(settings))
+  form.append('file', file)
+  return form
+}
 
 export interface Me {
   signedIn: boolean
@@ -105,6 +122,8 @@ export interface Field {
   kind: SettingKind
   required: boolean
   choices: string[] | null
+  /** The value the connector reads when the field is left out, which a form starts from. */
+  default: string | null
 }
 
 export interface Connector {
@@ -120,6 +139,8 @@ export interface Connection {
   name: string
   connector: string
   settings: Record<string, string | null>
+  /** The file a connector such as CSV reads, by the name it was uploaded with. */
+  fileName: string | null
   needsSignIn: boolean
   createdAt: string
 }
@@ -215,8 +236,18 @@ export const removeDestination = (id: number) => request<null>(`/destinations/${
 
 export const listConnectors = () => request<Connector[]>('/connectors')
 export const listConnections = (workspaceId: number) => request<Connection[]>(`/workspaces/${workspaceId}/connections`)
-export const addConnection = (workspaceId: number, name: string, connector: string, settings: Record<string, string>) =>
-  request<Connection>(`/workspaces/${workspaceId}/connections`, 'POST', { name, connector, settings })
+/** Adds a connection once its settings connect, uploading its file when its connector reads one. */
+export const addConnection = (workspaceId: number, name: string, connector: string, settings: Record<string, string>, file?: File) =>
+  file
+    ? formRequest<Connection>(`/workspaces/${workspaceId}/connections`, 'POST', connectionForm(name, settings, file, connector))
+    : request<Connection>(`/workspaces/${workspaceId}/connections`, 'POST', { name, connector, settings })
+
+/** Replaces the file a connection reads, which queues a run of each of its syncs. */
+export function replaceConnectionFile(id: number, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return formRequest<Connection>(`/connections/${id}/file`, 'PUT', form)
+}
 export const removeConnection = (id: number) => request<null>(`/connections/${id}`, 'DELETE')
 export const listStreams = (connectionId: number) => request<Stream[]>(`/connections/${connectionId}/streams`)
 
@@ -253,8 +284,10 @@ export const approvePairing = (id: string, workspaceId: number) =>
 export const declinePairing = (id: string) => request<{ returnUrl: string }>(`/pairings/${encodeURIComponent(id)}/decline`, 'POST')
 
 export const getConnect = (token: string) => connectRequest<ConnectView>(token, '/connect')
-export const connectConnection = (token: string, name: string, settings: Record<string, string>) =>
-  connectRequest<ConnectView>(token, '/connect/connection', 'POST', { name, settings })
+export const connectConnection = (token: string, name: string, settings: Record<string, string>, file?: File) =>
+  file
+    ? connectForm<ConnectView>(token, '/connect/connection', connectionForm(name, settings, file))
+    : connectRequest<ConnectView>(token, '/connect/connection', 'POST', { name, settings })
 export const connectStreams = (token: string) => connectRequest<Stream[]>(token, '/connect/streams')
 export const finishConnect = (token: string, streams: SyncPick[]) =>
   connectRequest<{ returnUrl: string }>(token, '/connect/syncs', 'POST', { streams })

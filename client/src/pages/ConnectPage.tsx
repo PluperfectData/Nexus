@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { cancelConnect, connectConnection, connectStreams, type ConnectView, finishConnect, getConnect, type Stream } from '../api'
 import { leaveFor } from '../browser'
 import { FieldInput } from '../components/FieldInput'
+import { defaultsOf } from '../fields'
 import { StreamPicks } from '../components/StreamPicks'
 import { initialPicks, type Pick, picked } from '../streams'
 
@@ -15,13 +16,17 @@ export function ConnectPage() {
   const [error, setError] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [values, setValues] = useState<Record<string, string>>({})
+  const [file, setFile] = useState<File | null>(null)
   const [streams, setStreams] = useState<Stream[] | null>(null)
   const [picks, setPicks] = useState<Record<string, Pick>>({})
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     getConnect(token)
-      .then(setView)
+      .then((found) => {
+        setView(found)
+        setValues(defaultsOf(found.connector.fields))
+      })
       .catch((e: Error) => setError(e.message))
   }, [token])
 
@@ -50,7 +55,7 @@ export function ConnectPage() {
 
   function connect(event: FormEvent) {
     event.preventDefault()
-    void act(async () => setView(await connectConnection(token, name.trim(), values)))
+    void act(async () => setView(await connectConnection(token, name.trim(), values, file ?? undefined)))
   }
 
   function finish(event: FormEvent) {
@@ -65,7 +70,7 @@ export function ConnectPage() {
   }
 
   const chosen = picked(picks)
-  const fields = view.connector.fields.filter((f) => f.kind !== 'File')
+  const fields = view.connector.fields
 
   return (
     <div className="page narrow">
@@ -88,6 +93,7 @@ export function ConnectPage() {
               field={field}
               value={values[field.name] ?? ''}
               onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
+              onFile={setFile}
             />
           ))}
           {error && <p className="error">{error}</p>}

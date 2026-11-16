@@ -17,7 +17,7 @@ public sealed record WorkspaceRequest(string? Name);
 /// <summary>Workspaces: every one for an admin, and a member's own for a member. Admins make, rename, and remove them, and choose their members.</summary>
 [ApiController]
 [Route("workspaces")]
-public sealed class WorkspacesController(NexusDbContext db, Access access, TimeProvider time) : ControllerBase
+public sealed class WorkspacesController(NexusDbContext db, Access access, ConnectionFiles files, TimeProvider time) : ControllerBase
 {
     [HttpGet]
     public async Task<IEnumerable<WorkspaceView>> List(CancellationToken ct)
@@ -84,7 +84,14 @@ public sealed class WorkspacesController(NexusDbContext db, Access access, TimeP
             return Problem("A sync in this workspace is running. Wait for it to end, then remove the workspace.", statusCode: StatusCodes.Status409Conflict);
         }
 
-        return await db.Workspaces.Where(w => w.Id == id).ExecuteDeleteAsync(ct) == 0 ? NotFound() : NoContent();
+        var stored = await db.Connections.Where(c => c.WorkspaceId == id && c.StoredFile != null).Select(c => c.StoredFile).ToListAsync(ct);
+        if (await db.Workspaces.Where(w => w.Id == id).ExecuteDeleteAsync(ct) == 0)
+        {
+            return NotFound();
+        }
+
+        stored.ForEach(files.Delete);
+        return NoContent();
     }
 
     [HttpPut("{id:int}/members/{userId:int}")]

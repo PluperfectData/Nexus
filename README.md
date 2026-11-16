@@ -458,8 +458,12 @@ dotnet run --project tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --mo
 
 `src/Nexus.Service` keeps users, workspaces, apps, their destinations, connections, and syncs in a MySQL
 database of its own, and runs each sync by reading its stream through a source connector and writing it
-through `PushDestination`. It reads through the MySQL, PostgreSQL, and SQL Server sources. `client/` holds its
+through `PushDestination`. It reads through the MySQL, PostgreSQL, SQL Server, and CSV sources. `client/` holds its
 pages.
+
+- A connection whose connector reads a file, such as CSV, is made from a `multipart/form-data` upload: `name`,
+  `connector`, `settings` as a JSON object of text, and `file`, up to 1 GB. The file is kept in `data/files` as the
+  connection's own copy, kept only once the connector reads it, and deleted with the connection.
 
 - A worker runs queued syncs one at a time. A full refresh overwrites its table. An incremental sync upserts
   by the stream's primary key, or appends when there is none, and resumes from the last checkpoint the
@@ -504,7 +508,8 @@ password, and signs that admin in. A restart writes a new code until the instanc
 | `/workspaces/{id}/apps`, `/apps/{id}`, `/apps/{id}/key`, `/apps/{id}/destinations`, `/destinations/{id}` | Apps, their keys, and their destinations. A key shows once, when it is made, and an app lists when its key was made. A destination is kept only once its key works, and records the push key's name and prefix. |
 | `POST /destinations/{id}/check` | Asks the push API whether it still takes the destination's key, and records the key's name and prefix, or why it was refused |
 | `GET /connectors` | The connectors and the settings each asks for |
-| `/workspaces/{id}/connections`, `/connections/{id}`, `GET /connections/{id}/streams` | Connections, kept only once their settings connect, and their streams |
+| `/workspaces/{id}/connections`, `/connections/{id}`, `GET /connections/{id}/streams` | Connections, kept only once their settings connect, and their streams. A connection that reads a file is made from a form with the file. |
+| `PUT /connections/{id}/file` | Replaces the file a connection reads, from a form with `file`, once the connector reads it, and queues a run of each of its syncs |
 | `/workspaces/{id}/syncs`, `POST /connections/{id}/syncs`, `POST /syncs/{id}/run`, `GET /syncs/{id}/runs`, `DELETE /syncs/{id}` | Syncs, their runs, and running one now |
 | `PATCH /syncs/{id}` | Changes a sync's destination, table name, and read mode from `{destinationId, table, mode, cursorField}`, and queues a run that reads from the start. The table it wrote before stays. |
 | `GET /pairings/{id}`, `POST /pairings/{id}/approve`, `POST /pairings/{id}/decline` | Admins see a pairing and approve it into a workspace, or decline it |
@@ -541,6 +546,7 @@ in the app's workspace, adds the syncs the person picks into the app's destinati
 return address with `?connection=<id>`, or `?error=cancelled` when they cancel. The page's address carries its
 token after the `#`, and the page sends it as `Authorization: Bearer nxc_...` to `GET /connect`,
 `POST /connect/connection`, `GET /connect/streams`, `POST /connect/syncs`, and `POST /connect/cancel`.
+`POST /connect/connection` takes a form with the file, as above, for a connector that reads one.
 
 A request that carries an `Authorization` header skips the antiforgery check, since another site's page cannot
 send one without a CORS preflight, which the service answers for its client's origin alone.

@@ -4,16 +4,50 @@ using Nexus.Service.Storage;
 
 namespace Nexus.Service.Controllers;
 
-/// <summary>A connection with the settings it is safe to show: every one but its secrets.</summary>
+/// <summary>
+/// A connection with the settings it is safe to show: every one but its secrets. <paramref name="FileName"/> names the
+/// file a connector such as CSV reads.
+/// </summary>
 public sealed record ConnectionView(
     int Id,
     string Name,
     string Connector,
     IReadOnlyDictionary<string, string?> Settings,
+    string? FileName,
     bool NeedsSignIn,
     DateTime CreatedAt);
 
 public sealed record ConnectionRequest(string? Name, string? Connector, IReadOnlyDictionary<string, string?>? Settings);
+
+/// <summary>A connection made from an upload: its name, its connector, its other settings as a JSON object, and the file.</summary>
+public sealed class FileConnectionForm
+{
+    public string? Name { get; set; }
+
+    public string? Connector { get; set; }
+
+    public string? Settings { get; set; }
+
+    public IFormFile? File { get; set; }
+
+    /// <summary>The settings sent as JSON, or null when they are not a JSON object of text.</summary>
+    public Dictionary<string, string?>? ParsedSettings()
+    {
+        try
+        {
+            return string.IsNullOrWhiteSpace(Settings) ? [] : System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string?>>(Settings);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+}
+
+public sealed class FileForm
+{
+    public IFormFile? File { get; set; }
+}
 
 public sealed record ColumnView(string Name, ColumnType Type);
 
@@ -30,9 +64,13 @@ public sealed record StreamView(
             .Select(s => new StreamView(s.Name, [.. s.Columns.Select(c => new ColumnView(c.Name, c.Type))], s.PrimaryKey, s.CursorFields, s.SyncModes));
 }
 
-/// <summary>A workspace's connections, for its members: add one once its settings connect, list its streams, and remove it.</summary>
+/// <summary>
+/// A workspace's connections, for its members: add one once its settings connect, list its streams, replace the file
+/// one reads, and remove it.
+/// </summary>
 [ApiController]
-public sealed class ConnectionsController(NexusDbContext db, Access access, ConnectionMaker maker) : ControllerBase
+public sealed class ConnectionsController(NexusDbContext db, Access access, ConnectionMaker maker, ConnectionFiles files, PendingRuns queue)
+    : ControllerBase
 {
     [HttpGet("workspaces/{workspaceId:int}/connections")]
     public async Task<ActionResult<IEnumerable<ConnectionView>>> List(int workspaceId, CancellationToken ct)
@@ -48,6 +86,7 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
 
     /// <summary>Adds a connection once its settings connect.</summary>
     [HttpPost("workspaces/{workspaceId:int}/connections")]
+    [Consumes("application/json")]
     public async Task<ActionResult<ConnectionView>> Add(int workspaceId, ConnectionRequest request, CancellationToken ct)
     {
         if (!await access.CanSeeAsync(User, workspaceId, ct))
@@ -55,10 +94,76 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
             return NotFound();
         }
 
-        var (connection, problem) = await maker.AddAsync(workspaceId, request.Name, request.Connector, request.Settings, ct);
-        return connection is null
-            ? Problem(problem, statusCode: StatusCodes.Status400BadRequest)
-            : StatusCode(StatusCodes.Status201Created, maker.ViewOf(connection));
+        return Made(await maker.AddAsync(workspaceId, request.Name, request.Connector, request.Settings, null, ct));
+    }
+
+    /// <summary>Adds a connection that reads a file, such as CSV, once the connector reads the file uploaded with it.</summary>
+    [HttpPost("workspaces/{workspaceId:int}/connections")]
+    [Consumes("multipart/form-data")]
+    [RequestSizeLimit(ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    public async Task<ActionResult<ConnectionView>> AddWithFile(int workspaceId, [FromForm] FileConnectionForm form, CancellationToken ct)
+    {
+        if (!await access.CanSeeAsync(User, workspaceId, ct))
+        {
+            return NotFound();
+        }
+
+        if (form.ParsedSettings() is not { } settings)
+        {
+            return Problem("Send the settings as a JSON object of text.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var (file, refused) = await files.SaveAsync(form.File, ct);
+        return file is null
+            ? Problem(refused, statusCode: StatusCodes.Status400BadRequest)
+            : Made(await maker.AddAsync(workspaceId, form.Name, form.Connector, settings, file, ct));
+    }
+
+    /// <summary>
+    /// Replaces the file the connection reads once the connector reads the new copy, and queues a run of each of its
+    /// syncs that has a destination.
+    /// </summary>
+    [HttpPut("connections/{id:int}/file")]
+    [RequestSizeLimit(ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = ConnectionFiles.MaxBytes + ConnectionFiles.FormOverheadBytes)]
+    public async Task<ActionResult<ConnectionView>> ReplaceFile(int id, [FromForm] FileForm form, CancellationToken ct)
+    {
+        if (await FindAsync(id, ct) is not { } connection)
+        {
+            return NotFound();
+        }
+
+        var syncs = await db.Syncs.Where(s => s.ConnectionId == id).ToListAsync(ct);
+        if (syncs.Any(s => s.Status == SyncStatus.Running))
+        {
+            return Problem("A sync from this connection is running. Wait for it to end, then replace its file.", statusCode: StatusCodes.Status409Conflict);
+        }
+
+        var (file, refused) = await files.SaveAsync(form.File, ct);
+        if (file is null)
+        {
+            return Problem(refused, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (await maker.ReplaceFileAsync(connection, file, ct) is { } problem)
+        {
+            return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var queued = syncs.Where(s => s.DestinationId is not null && s.Status != SyncStatus.Queued).ToList();
+        foreach (var sync in queued)
+        {
+            sync.Status = SyncStatus.Queued;
+        }
+
+        await db.SaveChangesAsync(ct);
+        foreach (var sync in queued)
+        {
+            queue.Enqueue(new PendingRun(sync.Id, 1));
+        }
+
+        return maker.ViewOf(connection);
     }
 
     /// <summary>The streams the connection offers, read from its source now.</summary>
@@ -74,7 +179,7 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
         return catalog is null ? Problem(problem, statusCode: StatusCodes.Status400BadRequest) : StreamView.From(catalog).ToList();
     }
 
-    /// <summary>Removes the connection with its syncs. The tables at each destination stay.</summary>
+    /// <summary>Removes the connection with its syncs and its file. The tables at each destination stay.</summary>
     [HttpDelete("connections/{id:int}")]
     public async Task<IActionResult> Remove(int id, CancellationToken ct)
     {
@@ -90,8 +195,14 @@ public sealed class ConnectionsController(NexusDbContext db, Access access, Conn
 
         db.Connections.Remove(connection);
         await db.SaveChangesAsync(ct);
+        files.Delete(connection.StoredFile);
         return NoContent();
     }
+
+    private ActionResult<ConnectionView> Made((Connection? Connection, string? Problem) made) =>
+        made.Connection is null
+            ? Problem(made.Problem, statusCode: StatusCodes.Status400BadRequest)
+            : StatusCode(StatusCodes.Status201Created, maker.ViewOf(made.Connection));
 
     private async Task<Connection?> FindAsync(int id, CancellationToken ct) =>
         await db.Connections.FirstOrDefaultAsync(c => c.Id == id, ct) is { } connection && await access.CanSeeAsync(User, connection.WorkspaceId, ct)

@@ -1,7 +1,31 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useRef, useState } from 'react'
 import { addConnection, type App, type Connection, type Connector, type Sync, type SyncEdit } from '../api'
 import { placesOf } from '../places'
+import { defaultsOf } from '../fields'
 import { FieldInput } from './FieldInput'
+
+/** A button that picks a new copy of the file a connection reads. */
+function ReplaceFile({ connection, onPick }: { connection: Connection; onPick: (file: File) => void }) {
+  const input = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <button type="button" className="secondary" onClick={() => input.current?.click()}>
+        Replace file
+      </button>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        aria-label={`New copy of ${connection.fileName ?? 'its file'}`}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          e.target.value = ''
+          if (file) onPick(file)
+        }}
+      />
+    </>
+  )
+}
 import { SyncTables } from './SyncTables'
 
 /** A form for a connection: a name, a connector, and the settings that connector asks for, checked by the service. */
@@ -18,18 +42,19 @@ function ConnectionForm({
 }) {
   const [name, setName] = useState('')
   const [connectorId, setConnectorId] = useState(connectors[0]?.id ?? '')
-  const [values, setValues] = useState<Record<string, string>>({})
+  const [values, setValues] = useState<Record<string, string>>(() => defaultsOf(connectors[0]?.fields ?? []))
+  const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const connector = connectors.find((c) => c.id === connectorId)
-  const fields = (connector?.fields ?? []).filter((f) => f.kind !== 'File')
+  const fields = connector?.fields ?? []
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      onAdded(await addConnection(workspaceId, name.trim(), connectorId, values))
+      onAdded(await addConnection(workspaceId, name.trim(), connectorId, values, file ?? undefined))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -49,7 +74,8 @@ function ConnectionForm({
           value={connectorId}
           onChange={(e) => {
             setConnectorId(e.target.value)
-            setValues({})
+            setValues(defaultsOf(connectors.find((c) => c.id === e.target.value)?.fields ?? []))
+            setFile(null)
           }}
         >
           {connectors.map((c) => (
@@ -66,6 +92,7 @@ function ConnectionForm({
           field={field}
           value={values[field.name] ?? ''}
           onChange={(value) => setValues((current) => ({ ...current, [field.name]: value }))}
+          onFile={setFile}
         />
       ))}
       {error && <p className="error wide">{error}</p>}
@@ -97,6 +124,7 @@ export function ConnectionsSection({
   onRunSync,
   onRemoveSync,
   onEditSync,
+  onReplaceFile,
 }: {
   workspaceId: number
   connectors: Connector[]
@@ -105,6 +133,7 @@ export function ConnectionsSection({
   apps: App[]
   onAdded: (connection: Connection) => void
   onRemove: (connection: Connection) => void
+  onReplaceFile: (connection: Connection, file: File) => void
   onSyncsAdded: (syncs: Sync[]) => void
   onRunSync: (sync: Sync) => void
   onRemoveSync: (sync: Sync) => void
@@ -146,6 +175,7 @@ export function ConnectionsSection({
                   <strong>{connection.name}</strong>
                   <p className="muted">
                     {nameOf(connection.connector)}
+                    {connection.fileName && `, file ${connection.fileName}`}
                     {Object.entries(connection.settings)
                       .filter(([, value]) => value)
                       .map(([key, value]) => `, ${key} ${value}`)
@@ -153,9 +183,12 @@ export function ConnectionsSection({
                   </p>
                   {connection.needsSignIn && <p className="error">It needs a new sign-in.</p>}
                 </div>
-                <button type="button" className="quiet" onClick={() => onRemove(connection)}>
-                  Remove
-                </button>
+                <div className="row-actions">
+                  {connection.fileName && <ReplaceFile connection={connection} onPick={(file) => onReplaceFile(connection, file)} />}
+                  <button type="button" className="quiet" onClick={() => onRemove(connection)}>
+                    Remove
+                  </button>
+                </div>
               </div>
               <SyncTables
                 connection={connection}

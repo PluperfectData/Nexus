@@ -137,6 +137,10 @@ namespace Nexus.Service.Storage.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<string>("FileName")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -148,6 +152,10 @@ namespace Nexus.Service.Storage.Migrations
                     b.Property<string>("Settings")
                         .IsRequired()
                         .HasColumnType("longtext");
+
+                    b.Property<string>("StoredFile")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
 
                     b.Property<string>("Tokens")
                         .HasColumnType("longtext");

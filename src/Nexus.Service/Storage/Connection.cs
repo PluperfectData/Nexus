@@ -26,5 +26,11 @@ public sealed class Connection
     /// <summary>Whether the provider ended the sign-in, so the connection needs a new one before it syncs.</summary>
     public bool NeedsSignIn { get; set; }
 
+    /// <summary>The uploaded file's own name, for a connector that reads a file, such as CSV.</summary>
+    public string? FileName { get; set; }
+
+    /// <summary>The uploaded file's name in the service's files directory; the connection's own copy.</summary>
+    public string? StoredFile { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }

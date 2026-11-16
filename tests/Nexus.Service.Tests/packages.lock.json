@@ -657,6 +657,13 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )"
         }
       },
+      "nexus.csv": {
+        "type": "Project",
+        "dependencies": {
+          "Nexus.Abstractions": "[1.0.0, )",
+          "Sylvan.Data.Csv": "[1.4.4, )"
+        }
+      },
       "nexus.mysql": {
         "type": "Project",
         "dependencies": {
@@ -683,6 +690,7 @@
           "Microsoft.EntityFrameworkCore": "[9.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[9.0.0, )",
           "Nexus.Abstractions": "[1.0.0, )",
+          "Nexus.Csv": "[1.0.0, )",
           "Nexus.MySql": "[1.0.0, )",
           "Nexus.Postgres": "[1.0.0, )",
           "Nexus.Push": "[1.0.0, )",
@@ -851,6 +859,12 @@
         "dependencies": {
           "SQLitePCLRaw.core": "3.0.5"
         }
+      },
+      "Sylvan.Data.Csv": {
+        "type": "CentralTransitive",
+        "requested": "[1.4.4, )",
+        "resolved": "1.4.4",
+        "contentHash": "1xZkDQ29uW2Y37NMN2nNkD59pFv8icaiu1WGmbE98m9n6jNL3IO3aM3rK4Uf6RgI+BFKbf7S5DdZA6nu5g9COw=="
       },
       "System.Security.Cryptography.Pkcs": {
         "type": "CentralTransitive",

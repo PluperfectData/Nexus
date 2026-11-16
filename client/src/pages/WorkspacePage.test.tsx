@@ -18,6 +18,7 @@ import {
   listUsers,
   makeApp,
   type Me,
+  replaceConnectionFile,
   runSync,
   type Sync,
 } from '../api'
@@ -43,11 +44,12 @@ jest.mock('../api', () => ({
   makeApp: jest.fn(),
   editApp: jest.fn(),
   checkDestination: jest.fn(),
+  replaceConnectionFile: jest.fn(),
 }))
 
 const member: Me = { signedIn: true, id: 2, email: 'member@acme.test', isAdmin: false, hasPassword: true }
 
-const shop: Connection = { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, needsSignIn: false, createdAt: '2026-11-15T12:00:00Z' }
+const shop: Connection = { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, needsSignIn: false, createdAt: '2026-11-15T12:00:00Z' }
 
 const scryIngest: Destination = {
   id: 7,
@@ -134,8 +136,8 @@ beforeEach(() => {
       description: 'Reads tables from MySQL.',
       auth: 'ConnectionFields',
       fields: [
-        { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null },
-        { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null },
+        { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null, default: null },
+        { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null, default: null },
       ],
     },
   ])
@@ -158,8 +160,57 @@ it('adds a connection from the settings its connector asks for', async () => {
   await userEvent.type(screen.getByLabelText('Password'), 'hunter2')
   await userEvent.click(screen.getByRole('button', { name: 'Add connection' }))
 
-  expect(addConnection).toHaveBeenCalledWith(4, 'Warehouse', 'mysql', { host: 'wh.test', password: 'hunter2' })
+  expect(addConnection).toHaveBeenCalledWith(4, 'Warehouse', 'mysql', { host: 'wh.test', password: 'hunter2' }, undefined)
   expect(await screen.findByRole('listitem', { name: 'Connection Warehouse' })).toBeInTheDocument()
+})
+
+const csvConnector = {
+  id: 'csv',
+  name: 'CSV',
+  description: 'Reads a CSV file.',
+  auth: 'FileUpload',
+  fields: [
+    { name: 'file', label: 'CSV file', kind: 'File' as const, required: true, choices: null, default: null },
+    { name: 'stream', label: 'Table name', kind: 'Text' as const, required: true, choices: null, default: null },
+    { name: 'header', label: 'First row holds column names', kind: 'Boolean' as const, required: false, choices: null, default: 'true' },
+  ],
+}
+
+const ordersFile: Connection = { ...shop, id: 12, name: 'Orders', connector: 'csv', settings: { stream: 'orders', header: 'true' }, fileName: 'orders.csv' }
+
+it("adds a CSV connection from an uploaded file, starting from its settings' defaults", async () => {
+  jest.mocked(listConnectors).mockResolvedValue([csvConnector])
+  jest.mocked(addConnection).mockResolvedValue(ordersFile)
+  const file = new File(['id,item\n1,pen\n'], 'orders.csv', { type: 'text/csv' })
+  renderAs(member)
+  await userEvent.click(await screen.findByRole('button', { name: 'Add connection' }))
+
+  await userEvent.type(screen.getByLabelText('Name'), 'Orders')
+  await userEvent.upload(screen.getByLabelText('CSV file'), file)
+  await userEvent.type(screen.getByLabelText('Table name'), 'orders')
+  expect(screen.getByLabelText('First row holds column names')).toBeChecked()
+  await userEvent.click(screen.getByLabelText('First row holds column names'))
+  await userEvent.click(screen.getByRole('button', { name: 'Add connection' }))
+
+  expect(addConnection).toHaveBeenCalledWith(4, 'Orders', 'csv', { header: 'false', stream: 'orders' }, file)
+  const card = await screen.findByRole('listitem', { name: 'Connection Orders' })
+  expect(within(card).getByText(/^CSV, file orders\.csv/)).toBeInTheDocument()
+})
+
+it("replaces a connection's file, and reads its syncs again", async () => {
+  jest.mocked(listConnectors).mockResolvedValue([csvConnector])
+  jest.mocked(listConnections).mockResolvedValue([ordersFile])
+  jest.mocked(listSyncs).mockResolvedValue([])
+  jest.mocked(replaceConnectionFile).mockResolvedValue({ ...ordersFile, fileName: 'orders-2.csv' })
+  const file = new File(['id,item\n2,ink\n'], 'orders-2.csv', { type: 'text/csv' })
+  renderAs(member)
+  const card = await screen.findByRole('listitem', { name: 'Connection Orders' })
+
+  await userEvent.upload(within(card).getByLabelText('New copy of orders.csv'), file)
+
+  expect(replaceConnectionFile).toHaveBeenCalledWith(12, file)
+  expect(await within(card).findByText(/^CSV, file orders-2\.csv/)).toBeInTheDocument()
+  expect(listSyncs).toHaveBeenCalledTimes(2)
 })
 
 it("adds tables from a connection's streams into a destination", async () => {

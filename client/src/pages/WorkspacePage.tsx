@@ -13,6 +13,7 @@ import {
   removeConnection,
   removeSync,
   removeWorkspace,
+  replaceConnectionFile,
   runSync,
   type Sync,
   type WorkspaceDetail,
@@ -124,6 +125,12 @@ export function WorkspacePage() {
           const saved = await editSync(sync.id, edit)
           setSyncs((current) => current.map((s) => (s.id === saved.id ? saved : s)))
         }}
+        onReplaceFile={(connection, file) => act(async () => {
+          const replaced = await replaceConnectionFile(connection.id, file)
+          setConnections((current) => current.map((c) => (c.id === replaced.id ? replaced : c)))
+          // Replacing the file queues a run of each of its syncs.
+          setSyncs(await listSyncs(id))
+        })}
       />
 
       <AppsSection

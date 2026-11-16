@@ -139,6 +139,8 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
             connection.ToTable("connections");
             connection.Property(c => c.Name).HasMaxLength(Connection.MaxNameLength);
             connection.Property(c => c.Connector).HasMaxLength(32);
+            connection.Property(c => c.FileName).HasMaxLength(255);
+            connection.Property(c => c.StoredFile).HasMaxLength(64);
             connection.Property(c => c.CreatedAt).HasConversion(Utc);
             connection.HasOne(c => c.Workspace).WithMany().HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         });

@@ -44,12 +44,14 @@ public enum SettingKind
 /// <param name="Kind">How the field is rendered.</param>
 /// <param name="Required">Whether the user must fill it in.</param>
 /// <param name="Choices">The allowed values, when <paramref name="Kind"/> is <see cref="SettingKind.Choice"/>.</param>
+/// <param name="Default">The value the connector reads when the field is left out, for a form to start from.</param>
 public sealed record SettingField(
     string Name,
     string Label,
     SettingKind Kind,
     bool Required,
-    IReadOnlyList<string>? Choices = null);
+    IReadOnlyList<string>? Choices = null,
+    string? Default = null);
 
 /// <summary>The OAuth endpoints and scopes the host uses to sign the user in.</summary>
 /// <param name="AuthorizeUrl">Where the host sends the user to sign in.</param>

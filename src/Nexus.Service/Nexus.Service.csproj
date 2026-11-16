@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Nexus.Abstractions\Nexus.Abstractions.csproj" />
+    <ProjectReference Include="..\Nexus.Csv\Nexus.Csv.csproj" />
     <ProjectReference Include="..\Nexus.MySql\Nexus.MySql.csproj" />
     <ProjectReference Include="..\Nexus.Postgres\Nexus.Postgres.csproj" />
     <ProjectReference Include="..\Nexus.Push\Nexus.Push.csproj" />
