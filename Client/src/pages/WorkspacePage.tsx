@@ -9,6 +9,7 @@ import {
   listApps,
   listConnections,
   listConnectors,
+  listSignInApps,
   listSyncs,
   removeConnection,
   removeSync,
@@ -16,12 +17,14 @@ import {
   renewSignIn,
   replaceConnectionFile,
   runSync,
+  type SignInApp,
   type Sync,
   type WorkspaceDetail,
 } from '../api'
 import { AppsSection } from '../components/AppsSection'
 import { ConnectionsSection } from '../components/ConnectionsSection'
 import { MembersSection } from '../components/MembersSection'
+import { SignInAppsSection } from '../components/SignInAppsSection'
 import { leaveFor } from '../browser'
 import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
@@ -41,6 +44,7 @@ export function WorkspacePage() {
   const [connections, setConnections] = useState<Connection[]>([])
   const [apps, setApps] = useState<App[]>([])
   const [syncs, setSyncs] = useState<Sync[]>([])
+  const [signInApps, setSignInApps] = useState<SignInApp[]>([])
   // A sign-in to a provider comes back here with the connection it made or renewed, or with why it failed.
   const [arrival] = useState(arrivalQuery)
   const [error, setError] = useState<string | null>(() => arrival.get('error'))
@@ -49,13 +53,14 @@ export function WorkspacePage() {
   useEffect(clearQuery, [])
 
   useEffect(() => {
-    Promise.all([getWorkspace(id), listConnectors(), listConnections(id), listApps(id), listSyncs(id)])
-      .then(([found, connectorList, connectionList, appList, syncList]) => {
+    Promise.all([getWorkspace(id), listConnectors(), listConnections(id), listApps(id), listSyncs(id), listSignInApps(id)])
+      .then(([found, connectorList, connectionList, appList, syncList, signInAppList]) => {
         setWorkspace(found)
         setConnectors(connectorList)
         setConnections(connectionList)
         setApps(appList)
         setSyncs(syncList)
+        setSignInApps(signInAppList)
       })
       .catch((e: Error) => setError(e.message))
   }, [id])
@@ -79,6 +84,9 @@ export function WorkspacePage() {
   }
 
   if (!workspace) return <p className={error ? 'page error' : 'page muted'}>{error ?? 'Loading…'}</p>
+
+  // A connector that signs in is ready here once this workspace's app for it is.
+  const ready = connectors.map((c) => ({ ...c, notReady: signInApps.find((a) => a.connector === c.id)?.problem ?? c.notReady }))
 
   return (
     <div className="page">
@@ -108,7 +116,7 @@ export function WorkspacePage() {
 
       <ConnectionsSection
         workspaceId={workspace.id}
-        connectors={connectors}
+        connectors={ready}
         connections={connections}
         syncs={syncs}
         apps={apps}
@@ -142,6 +150,8 @@ export function WorkspacePage() {
           setSyncs(await listSyncs(id))
         })}
       />
+
+      <SignInAppsSection workspaceId={workspace.id} apps={signInApps} onChange={setSignInApps} />
 
       <AppsSection
         workspaceId={workspace.id}

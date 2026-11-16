@@ -18,6 +18,7 @@ public sealed partial class SyncRunner(
     NexusDbContext db,
     SourceConnectors connectors,
     ConnectionMaker connections,
+    OAuthApps apps,
     PushDestination destination,
     Secrets secrets,
     RetryPolicy retry,
@@ -83,7 +84,12 @@ public sealed partial class SyncRunner(
             ?? throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, $"'{connection.Connector}' is not a connector the service reads.");
         var target = sync.Destination
             ?? throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, NoDestination);
-        var sourceConfig = connections.ConfigOf(connection);
+        if (source.Spec.Auth == AuthKind.OAuth && await apps.ProblemForAsync(connection.Connector, connection.WorkspaceId, ct) is { } missing)
+        {
+            throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, missing);
+        }
+
+        var sourceConfig = await connections.ConfigOfAsync(connection, ct);
         var destinationConfig = new ConnectorConfig(new Dictionary<string, string?>
         {
             [PushDestination.UrlSetting] = target.Url,

@@ -80,6 +80,7 @@ export function ConnectPage() {
 
   const chosen = picked(picks)
   const fields = view.connector.fields
+  const notReady = signsIn ? view.connector.notReady : null
 
   return (
     <div className="page narrow">
@@ -95,11 +96,14 @@ export function ConnectPage() {
             {view.connector.name} ended the sign-in that <strong>{view.connection?.name}</strong> reads with. Sign in again to keep it
             syncing.
           </p>
+          {notReady && <p className="error">{notReady}</p>}
           {error && <p className="error">{error}</p>}
           <div className="form-actions">
-            <button type="button" disabled={busy} onClick={() => act(async () => leaveFor((await connectSignIn(token, '', {})).url))}>
-              {busy ? 'Starting…' : `Sign in to ${view.connector.name} again`}
-            </button>
+            {!notReady && (
+              <button type="button" disabled={busy} onClick={() => act(async () => leaveFor((await connectSignIn(token, '', {})).url))}>
+                {busy ? 'Starting…' : `Sign in to ${view.connector.name} again`}
+              </button>
+            )}
             <button type="button" className="quiet" onClick={cancel} disabled={busy}>
               Cancel
             </button>
@@ -121,11 +125,14 @@ export function ConnectPage() {
               onFile={setFile}
             />
           ))}
+          {notReady && <p className="error">{notReady}</p>}
           {error && <p className="error">{error}</p>}
           <div className="form-actions">
-            <button type="submit" disabled={busy}>
-              {busy ? 'Connecting…' : signsIn ? `Sign in to ${view.connector.name}` : 'Connect'}
-            </button>
+            {!notReady && (
+              <button type="submit" disabled={busy}>
+                {busy ? 'Connecting…' : signsIn ? `Sign in to ${view.connector.name}` : 'Connect'}
+              </button>
+            )}
             <button type="button" className="quiet" onClick={cancel} disabled={busy}>
               Cancel
             </button>

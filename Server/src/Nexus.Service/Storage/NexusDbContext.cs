@@ -38,8 +38,37 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
 
     public DbSet<Pairing> Pairings => Set<Pairing>();
 
+    public DbSet<ProviderApp> ProviderApps => Set<ProviderApp>();
+
+    public DbSet<StoredSignIn> PendingSignIns => Set<StoredSignIn>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ProviderApp>(app =>
+        {
+            app.ToTable("provider_apps");
+            app.HasIndex(a => new { a.WorkspaceId, a.Connector }).IsUnique();
+            app.Property(a => a.Connector).HasMaxLength(32);
+            app.Property(a => a.ClientId).HasMaxLength(ProviderApp.MaxClientIdLength);
+            app.Property(a => a.ClientSecret).HasMaxLength(2000);
+            app.Property(a => a.UpdatedAt).HasConversion(Utc);
+            app.HasOne(a => a.Workspace).WithMany().HasForeignKey(a => a.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StoredSignIn>(signIn =>
+        {
+            signIn.ToTable("sign_ins");
+            signIn.HasIndex(s => s.StateHash).IsUnique();
+            signIn.HasIndex(s => s.ExpiresAt);
+            signIn.Property(s => s.StateHash).HasMaxLength(64);
+            signIn.Property(s => s.Connector).HasMaxLength(32);
+            signIn.Property(s => s.Name).HasMaxLength(Connection.MaxNameLength);
+            signIn.Property(s => s.SessionToken).HasMaxLength(2000);
+            signIn.Property(s => s.CreatedAt).HasConversion(Utc);
+            signIn.Property(s => s.ExpiresAt).HasConversion(Utc);
+            signIn.HasOne(s => s.Workspace).WithMany().HasForeignKey(s => s.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Pairing>(pairing =>
         {
             pairing.ToTable("pairings");

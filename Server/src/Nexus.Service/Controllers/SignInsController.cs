@@ -33,10 +33,10 @@ public sealed class SignInsController(
             return NotFound();
         }
 
-        var (name, given, problem) = maker.CheckSignIn(request.Name, request.Connector, request.Settings);
+        var (name, given, problem) = await maker.CheckSignInAsync(workspaceId, request.Name, request.Connector, request.Settings, ct);
         return problem is not null
             ? Problem(problem, statusCode: StatusCodes.Status400BadRequest)
-            : PageFor(new PendingSignIn(request.Connector!, workspaceId, name, given, null, null, null));
+            : await PageForAsync(new PendingSignIn(request.Connector!, workspaceId, name, given, null, null, null), ct);
     }
 
     /// <summary>Signs the connection in again, keeping its settings and syncs.</summary>
@@ -54,9 +54,9 @@ public sealed class SignInsController(
             return Problem("This connection takes no sign-in.", statusCode: StatusCodes.Status400BadRequest);
         }
 
-        return apps.ProblemFor(connection.Connector) is { } problem
+        return await apps.ProblemForAsync(connection.Connector, connection.WorkspaceId, ct) is { } problem
             ? Problem(problem, statusCode: StatusCodes.Status400BadRequest)
-            : PageFor(new PendingSignIn(connection.Connector, connection.WorkspaceId, null, null, connection.Id, null, null));
+            : await PageForAsync(new PendingSignIn(connection.Connector, connection.WorkspaceId, null, null, connection.Id, null, null), ct);
     }
 
     /// <summary>Where the provider sends the browser back, with a code to exchange for tokens or the reason it has none.</summary>
@@ -64,7 +64,7 @@ public sealed class SignInsController(
     [AllowAnonymous]
     public async Task<IActionResult> Callback(string? code, string? state, string? error, CancellationToken ct)
     {
-        if (signIns.Take(state) is not { } pending)
+        if (await signIns.TakeAsync(state, ct) is not { } pending)
         {
             return Redirect($"{Client}/?error={Uri.EscapeDataString(Lost)}");
         }
@@ -89,7 +89,7 @@ public sealed class SignInsController(
         OAuthTokens tokens;
         try
         {
-            tokens = await apps.ExchangeAsync(pending.Connector, code, ct);
+            tokens = await apps.ExchangeAsync(pending.Connector, pending.WorkspaceId, code, ct);
         }
         catch (ConnectorException ex)
         {
@@ -131,8 +131,8 @@ public sealed class SignInsController(
 
     private string Client => instance.Client;
 
-    private ActionResult<SignInPage> PageFor(PendingSignIn pending) =>
-        new SignInPage(apps.SignInPage(pending.Connector, signIns.Start(pending)).ToString());
+    private async Task<ActionResult<SignInPage>> PageForAsync(PendingSignIn pending, CancellationToken ct) =>
+        new SignInPage((await apps.SignInPageAsync(pending.Connector, pending.WorkspaceId, await signIns.StartAsync(pending, ct), ct)).ToString());
 
     // Back to the page the sign-in started from, with the reason it failed.
     private RedirectResult Failed(PendingSignIn pending, string reason) =>

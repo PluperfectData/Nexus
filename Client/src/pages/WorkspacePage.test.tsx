@@ -13,6 +13,7 @@ import {
   listApps,
   listConnections,
   listConnectors,
+  listSignInApps,
   listStreams,
   listSyncs,
   listUsers,
@@ -21,6 +22,8 @@ import {
   renewSignIn,
   replaceConnectionFile,
   runSync,
+  saveSignInApp,
+  type SignInApp,
   startSignIn,
   type Sync,
 } from '../api'
@@ -38,6 +41,8 @@ jest.mock('../api', () => ({
   listConnections: jest.fn(),
   listApps: jest.fn(),
   listSyncs: jest.fn(),
+  listSignInApps: jest.fn(),
+  saveSignInApp: jest.fn(),
   listUsers: jest.fn(),
   addConnection: jest.fn(),
   listStreams: jest.fn(),
@@ -146,9 +151,11 @@ beforeEach(() => {
         { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null, default: null },
         { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null, default: null },
       ],
+      notReady: null,
     },
   ])
   jest.mocked(listConnections).mockResolvedValue([shop])
+  jest.mocked(listSignInApps).mockResolvedValue([])
   jest.mocked(listApps).mockResolvedValue([scry])
   jest.mocked(listSyncs).mockResolvedValue([orders])
   jest.mocked(listUsers).mockResolvedValue([])
@@ -181,6 +188,7 @@ const csvConnector = {
     { name: 'stream', label: 'Table name', kind: 'Text' as const, required: true, choices: null, default: null },
     { name: 'header', label: 'First row holds column names', kind: 'Boolean' as const, required: false, choices: null, default: 'true' },
   ],
+  notReady: null,
 }
 
 const ordersFile: Connection = { ...shop, id: 12, name: 'Orders', connector: 'csv', settings: { stream: 'orders', header: 'true' }, fileName: 'orders.csv' }
@@ -390,7 +398,48 @@ const schwabConnector = {
   description: 'Reads a Schwab sign-in.',
   auth: 'OAuth',
   fields: [{ name: 'startDate', label: 'Read history from (yyyy-MM-dd)', kind: 'Text' as const, required: true, choices: null, default: null }],
+  notReady: null,
 }
+
+const schwabApp: SignInApp = {
+  connector: 'schwab',
+  name: 'Charles Schwab',
+  set: false,
+  configured: false,
+  keyEnding: null,
+  updatedAt: null,
+  callbackUrl: 'https://127.0.0.1:6164/oauth/callback',
+  problem: 'This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.',
+}
+
+it('sets the workspace app a provider signs in through, showing the callback to register', async () => {
+  const set: SignInApp = { ...schwabApp, set: true, keyEnding: '1a2b', updatedAt: '2026-11-16T12:00:00Z', problem: null }
+  jest.mocked(listSignInApps).mockResolvedValueOnce([schwabApp]).mockResolvedValue([set])
+  jest.mocked(saveSignInApp).mockResolvedValue(set)
+  renderAs(member)
+
+  expect(await screen.findByText('Not set yet.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Callback to register on the app')).toHaveValue('https://127.0.0.1:6164/oauth/callback')
+  await userEvent.type(screen.getByLabelText('App key'), 'key-1a2b')
+  await userEvent.type(screen.getByLabelText('App secret'), 'the-secret')
+  await userEvent.click(screen.getByRole('button', { name: 'Save app' }))
+
+  expect(saveSignInApp).toHaveBeenCalledWith(4, 'schwab', 'key-1a2b', 'the-secret')
+  expect(await screen.findByText(/^Set, with the key ending 1a2b/)).toBeInTheDocument()
+  expect(screen.getByLabelText('App secret')).toHaveValue('')
+  expect(screen.getByLabelText('App secret')).toHaveAttribute('placeholder', 'Stored')
+})
+
+it("says a provider cannot be signed in to until the workspace's app is set, in place of the sign-in button", async () => {
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
+  renderAs(member)
+
+  await userEvent.click(await screen.findByRole('button', { name: 'Add connection' }))
+
+  expect(screen.getByText(schwabApp.problem!, { selector: 'form p' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Sign in to Charles Schwab' })).not.toBeInTheDocument()
+})
 
 it('signs in to a provider for a connector that signs in, and says so on coming back', async () => {
   jest.mocked(listConnectors).mockResolvedValue([schwabConnector])

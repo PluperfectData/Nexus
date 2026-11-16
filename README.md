@@ -468,6 +468,12 @@ pages.
   which keeps the tokens, encrypted, and sends it on: to the connect page to pick streams, to the workspace page
   with `?signedIn=`, or with `?error=` and the reason. Schwab's setting that allows orders is never offered,
   since the service only reads.
+- Each workspace signs in through its own app at the provider, such as its Schwab app, which its members set under
+  Sign-in apps on the workspace page, beside the callback to register on it. The app's secret is encrypted and
+  never shown again. A connector whose app is not set says so wherever it is offered, in place of signing in, and a
+  sync of it fails and says so.
+- A sign-in under way is kept in the database for 10 minutes, by a hash of the `state` the provider's redirect
+  returns, so a restart of the service loses none. Each is used once.
 - A connection whose connector reads a file, such as CSV, is made from a `multipart/form-data` upload: `name`,
   `connector`, `settings` as a JSON object of text, and `file`, up to 1 GB. The file is kept in `data/files` as the
   connection's own copy, kept only once the connector reads it, and deleted with the connection.
@@ -515,6 +521,7 @@ The first admin comes from the installer, below.
 | `/workspaces/{id}/apps`, `/apps/{id}`, `/apps/{id}/key`, `/apps/{id}/destinations`, `/destinations/{id}` | Apps, their keys, and their destinations. A key shows once, when it is made, and an app lists when its key was made. A destination is kept only once its key works, and records the push key's name and prefix. |
 | `POST /destinations/{id}/check` | Asks the push API whether it still takes the destination's key, and records the key's name and prefix, or why it was refused |
 | `GET /connectors` | The connectors and the settings each asks for |
+| `GET /workspaces/{id}/sign-in-apps`, `PUT` and `DELETE /workspaces/{id}/sign-in-apps/{connector}` | The workspace's app for each provider it signs in to, from `{clientId, clientSecret}`: whether it is set, the last four characters of its key, the callback to register, and why the workspace cannot sign in yet. A blank key or secret keeps the one stored. |
 | `/workspaces/{id}/connections`, `/connections/{id}`, `GET /connections/{id}/streams` | Connections, kept only once their settings connect, and their streams. A connection that reads a file is made from a form with the file. |
 | `PUT /connections/{id}/file` | Replaces the file a connection reads, from a form with `file`, once the connector reads it, and queues a run of each of its syncs |
 | `/workspaces/{id}/syncs`, `POST /connections/{id}/syncs`, `POST /syncs/{id}/run`, `GET /syncs/{id}/runs`, `DELETE /syncs/{id}` | Syncs, their runs, and running one now |
@@ -543,7 +550,7 @@ syncs into its own app's destinations.
 |---|---|
 | `GET /app` | The app itself: its name, its workspace, its destinations with their ids, and its return addresses |
 | `DELETE /app/key` | Revokes the app's own key, as an app does when it unlinks |
-| `GET /connectors` | The connectors and the settings each asks for |
+| `GET /connectors` | The connectors and the settings each asks for, each with `notReady`: why the app's workspace cannot connect it yet, such as a sign-in app it has not set |
 | `POST /connect-sessions` | From `{"connector", "destinationId", "returnUrl"}`, opens a connect page and answers its address. The destination must be the app's, and the return address one an admin added to the app. With `connectionId`, a connection in the app's workspace that signs in, the page signs it in again and returns with `?connection=`. |
 | `GET /syncs` | The app's syncs, each with how its last run went and whether its connection needs a new sign-in |
 | `POST /syncs/{id}/run`, `DELETE /syncs/{id}` | Runs one of the app's syncs now, or removes it |
@@ -633,6 +640,7 @@ debugging. A configured value wins over the stored one, and the pages show it wi
 | `Nexus:MailFrom`, `Nexus:MailFromName` | `Nexus__MailFrom`, `Nexus__MailFromName` | The sender |
 | `Jwt:SigningKey` | `Jwt__SigningKey` | The session signing key the service makes, at least 32 bytes |
 | `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail: it is written to files there instead |
+| `Nexus:Schwab:AppKey`, `Nexus:Schwab:AppSecret` | `Nexus__Schwab__AppKey`, `Nexus__Schwab__AppSecret` | Each workspace's Schwab app |
 
 For example, as a user secret:
 
@@ -640,9 +648,8 @@ For example, as a user secret:
 dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project Server/src/Nexus.Service
 ```
 
-To sign in to Schwab, the service needs the Schwab app's key and secret, and the callback the Settings page shows,
-`https://127.0.0.1:6164/oauth/callback` on this machine, registered on the app as its own entry.
-`Nexus:Schwab:CallbackUrl` sets a different callback for Schwab alone.
+`Nexus:Schwab:AppKey` and `Nexus:Schwab:AppSecret` set one Schwab app for every workspace, in place of each
+workspace's own. `Nexus:Schwab:CallbackUrl` sets a callback for Schwab alone, in place of the instance's.
 
 ```bash
 dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project Server/src/Nexus.Service

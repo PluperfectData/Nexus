@@ -51,6 +51,7 @@ function ConnectionForm({
   const fields = connector?.fields ?? []
 
   const signsIn = connector?.auth === 'OAuth'
+  const notReady = signsIn ? connector?.notReady : null
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -102,11 +103,14 @@ function ConnectionForm({
           onFile={setFile}
         />
       ))}
+      {notReady && <p className="error wide">{notReady}</p>}
       {error && <p className="error wide">{error}</p>}
       <div className="form-actions wide">
-        <button type="submit" disabled={busy}>
-          {busy ? 'Connecting…' : signsIn ? `Sign in to ${connector?.name}` : 'Add connection'}
-        </button>
+        {!notReady && (
+          <button type="submit" disabled={busy}>
+            {busy ? 'Connecting…' : signsIn ? `Sign in to ${connector?.name}` : 'Add connection'}
+          </button>
+        )}
         <button type="button" className="quiet" onClick={onCancel}>
           Cancel
         </button>

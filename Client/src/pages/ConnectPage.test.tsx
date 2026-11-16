@@ -28,6 +28,7 @@ const opened: ConnectView = {
       { name: 'host', label: 'Host', kind: 'Text', required: true, choices: null, default: null },
       { name: 'password', label: 'Password', kind: 'Secret', required: false, choices: null, default: null },
     ],
+    notReady: null,
   },
   destinationUrl: 'http://localhost:6161/ingest',
   expiresAt: '2026-11-15T12:10:00Z',
@@ -51,7 +52,18 @@ const schwab = {
   description: 'Reads a Schwab sign-in.',
   auth: 'OAuth',
   fields: [{ name: 'startDate', label: 'Read history from (yyyy-MM-dd)', kind: 'Text' as const, required: true, choices: null, default: null }],
+  notReady: null,
 }
+
+it("says the workspace's app is missing in place of the sign-in button", async () => {
+  const notReady = 'This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.'
+  jest.mocked(getConnect).mockResolvedValue({ ...opened, connector: { ...schwab, notReady } })
+  render(<ConnectPage />)
+
+  expect(await screen.findByText(notReady)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Sign in to Charles Schwab' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+})
 
 it("signs in to a provider's page in place of connecting, for a connector that signs in", async () => {
   jest.mocked(getConnect).mockResolvedValue({ ...opened, connector: schwab })
@@ -98,6 +110,7 @@ it("uploads the file a CSV connector reads, starting from its settings' defaults
         { name: 'stream', label: 'Table name', kind: 'Text', required: true, choices: null, default: null },
         { name: 'header', label: 'First row holds column names', kind: 'Boolean', required: false, choices: null, default: 'true' },
       ],
+      notReady: null,
     },
   })
   jest.mocked(connectConnection).mockResolvedValue(connected)

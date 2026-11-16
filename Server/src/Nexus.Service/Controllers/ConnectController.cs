@@ -54,7 +54,7 @@ public sealed class ConnectController(
 
     [HttpGet]
     public async Task<ActionResult<ConnectView>> Get(CancellationToken ct) =>
-        await SessionAsync(ct) is { } session ? View(session) : Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
+        await SessionAsync(ct) is { } session ? await ViewAsync(session, ct) : Problem(Ended, statusCode: StatusCodes.Status401Unauthorized);
 
     /// <summary>Makes the page's one connection, once its settings connect.</summary>
     [HttpPost("connection")]
@@ -106,7 +106,7 @@ public sealed class ConnectController(
         session.ConnectionId = connection.Id;
         session.Connection = connection;
         await db.SaveChangesAsync(ct);
-        return View(session);
+        return await ViewAsync(session, ct);
     }
 
     /// <summary>
@@ -123,14 +123,15 @@ public sealed class ConnectController(
 
         var token = Request.Headers.Authorization.ToString()["Bearer ".Length..].Trim();
         PendingSignIn pending;
+        var workspaceId = session.App!.WorkspaceId;
         if (session.Renews)
         {
-            if (apps.ProblemFor(session.Connector) is { } missing)
+            if (await apps.ProblemForAsync(session.Connector, workspaceId, ct) is { } missing)
             {
                 return Problem(missing, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            pending = new PendingSignIn(session.Connector, session.App!.WorkspaceId, null, null, session.ConnectionId, session.Id, token);
+            pending = new PendingSignIn(session.Connector, workspaceId, null, null, session.ConnectionId, session.Id, token);
         }
         else if (session.ConnectionId is not null)
         {
@@ -138,16 +139,16 @@ public sealed class ConnectController(
         }
         else
         {
-            var (name, settings, problem) = connections.CheckSignIn(request.Name, session.Connector, request.Settings);
+            var (name, settings, problem) = await connections.CheckSignInAsync(workspaceId, request.Name, session.Connector, request.Settings, ct);
             if (problem is not null)
             {
                 return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
             }
 
-            pending = new PendingSignIn(session.Connector, session.App!.WorkspaceId, name, settings, null, session.Id, token);
+            pending = new PendingSignIn(session.Connector, workspaceId, name, settings, null, session.Id, token);
         }
 
-        return new SignInPage(apps.SignInPage(session.Connector, signIns.Start(pending)).ToString());
+        return new SignInPage((await apps.SignInPageAsync(session.Connector, workspaceId, await signIns.StartAsync(pending, ct), ct)).ToString());
     }
 
     [HttpGet("streams")]
@@ -218,13 +219,13 @@ public sealed class ConnectController(
         await db.SaveChangesAsync(ct);
     }
 
-    private ConnectView View(ConnectSession session)
+    private async Task<ConnectView> ViewAsync(ConnectSession session, CancellationToken ct)
     {
         var connector = connectors.Find(session.Connector) ?? throw new InvalidOperationException($"No connector '{session.Connector}'.");
         return new ConnectView(
             session.App!.Name,
             session.App.Workspace!.Name,
-            ConnectorView.Of(connector),
+            await ConnectorView.ForAsync(connector, apps, session.App.WorkspaceId, ct),
             session.Destination!.Url,
             session.ExpiresAt,
             session.Connection is { } connection ? connections.ViewOf(connection) : null,

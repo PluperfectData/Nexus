@@ -19,6 +19,7 @@ public static class InstanceReset
         ("Nexus:MailFrom", "the sender is fixed"),
         ("Nexus:MailFromName", "the sender's name is fixed"),
         ("Jwt:SigningKey", "the signing key is fixed"),
+        ("Nexus:Schwab:AppKey", "every workspace signs in to Schwab through that app"),
     ];
 
     /// <summary>Answers the exit code, having said what it did.</summary>

@@ -133,7 +133,7 @@ public sealed class SignInTests
 
         var schwab = (await _admin.GetAsync<JsonElement>("/connectors")).EnumerateArray().Single(c => c.GetProperty("id").GetString() == "schwab");
         using var scope = _factory.Services.CreateScope();
-        var config = scope.ServiceProvider.GetRequiredService<ConnectionMaker>().ConfigOf(await ConnectionAsync("Brokerage"));
+        var config = await scope.ServiceProvider.GetRequiredService<ConnectionMaker>().ConfigOfAsync(await ConnectionAsync("Brokerage"), CancellationToken.None);
 
         schwab.GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString()).ShouldNotContain("allowOrders");
         config.Client!.ClientId.ShouldBe("app-key");
@@ -180,8 +180,14 @@ public sealed class SignInTests
         return client;
     }
 
-    private async Task<int> MakeWorkspaceAsync() =>
-        (await _admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
+    // A workspace with its own Schwab app, as its members set it on the workspace page.
+    private async Task<int> MakeWorkspaceAsync()
+    {
+        var workspace = (await _admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
+        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId = "app-key", clientSecret = "app-secret" }))
+            .EnsureSuccessStatusCode();
+        return workspace;
+    }
 
     private async Task<(string Key, int Destination)> MakeAppAsync(int workspace)
     {

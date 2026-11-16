@@ -142,6 +142,23 @@ export interface Connector {
   description: string
   auth: string
   fields: Field[]
+  /** Why it cannot be connected in the workspace asking yet, such as a sign-in app not set there. */
+  notReady: string | null
+}
+
+/**
+ * A workspace's app for a provider it signs in to, such as its Schwab app. The secret is never answered: `keyEnding` is
+ * the last four characters of the key. `problem` says why the workspace cannot sign in to the provider yet.
+ */
+export interface SignInApp {
+  connector: string
+  name: string
+  set: boolean
+  configured: boolean
+  keyEnding: string | null
+  updatedAt: string | null
+  callbackUrl: string | null
+  problem: string | null
 }
 
 export interface Connection {
@@ -266,6 +283,13 @@ export const startSignIn = (workspaceId: number, name: string, connector: string
 export const renewSignIn = (id: number) => request<{ url: string }>(`/connections/${id}/sign-in`, 'POST')
 
 export const removeConnection = (id: number) => request<null>(`/connections/${id}`, 'DELETE')
+
+export const listSignInApps = (workspaceId: number) => request<SignInApp[]>(`/workspaces/${workspaceId}/sign-in-apps`)
+/** Sets the workspace's app for a provider. A blank key or secret keeps the one stored. */
+export const saveSignInApp = (workspaceId: number, connector: string, clientId: string, clientSecret: string) =>
+  request<SignInApp>(`/workspaces/${workspaceId}/sign-in-apps/${connector}`, 'PUT', { clientId, clientSecret })
+export const removeSignInApp = (workspaceId: number, connector: string) =>
+  request<null>(`/workspaces/${workspaceId}/sign-in-apps/${connector}`, 'DELETE')
 export const listStreams = (connectionId: number) => request<Stream[]>(`/connections/${connectionId}/streams`)
 
 export const listSyncs = (workspaceId: number) => request<Sync[]>(`/workspaces/${workspaceId}/syncs`)

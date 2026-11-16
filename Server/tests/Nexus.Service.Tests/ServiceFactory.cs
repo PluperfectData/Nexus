@@ -44,6 +44,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFrom)}",
         $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFromName)}",
         $"{SchwabApp.Section}:{nameof(SchwabApp.CallbackUrl)}",
+        $"{SchwabApp.Section}:{nameof(SchwabApp.AppKey)}",
+        $"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}",
     ];
 
     private readonly bool _mailToFiles;
@@ -151,8 +153,6 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
         builder.UseSetting("Mail:PickupDirectory", _mailToFiles ? MailDirectory : string.Empty);
-        builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppKey)}", "app-key");
-        builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}", "app-secret");
 
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>

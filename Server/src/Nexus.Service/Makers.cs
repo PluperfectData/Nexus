@@ -39,29 +39,31 @@ public sealed class ConnectionMaker(
     }
 
     /// <summary>
-    /// The config a connector reads the connection with: its settings, its tokens, its file, and the app it refreshes
-    /// its tokens through.
+    /// The config a connector reads the connection with: its settings, its tokens, its file, and the workspace's app
+    /// it refreshes its tokens through.
     /// </summary>
-    public ConnectorConfig ConfigOf(Connection connection) =>
+    public async Task<ConnectorConfig> ConfigOfAsync(Connection connection, CancellationToken ct) =>
         new(
             secrets.Unprotect(connection.Settings),
             Tokens: secrets.UnprotectTokens(connection.Tokens),
             Files: FilesOf(connectors.Find(connection.Connector), connection.FileName, connection.StoredFile),
-            Client: apps.ClientFor(connection.Connector));
+            Client: await apps.ClientForAsync(connection.Connector, connection.WorkspaceId, ct));
 
     /// <summary>
     /// The name and settings a connection made by signing in would keep, checked before the person leaves for the
     /// provider, or why it cannot be made.
     /// </summary>
-    public (string Name, Dictionary<string, string?> Settings, string? Problem) CheckSignIn(
+    public async Task<(string Name, Dictionary<string, string?> Settings, string? Problem)> CheckSignInAsync(
+        int workspaceId,
         string? name,
         string? connectorId,
-        IReadOnlyDictionary<string, string?>? given)
+        IReadOnlyDictionary<string, string?>? given,
+        CancellationToken ct)
     {
         var (connector, trimmed, settings, problem) = Prepare(name, connectorId, given);
         return connector is null ? (trimmed, settings, problem)
             : connector.Spec.Auth != AuthKind.OAuth ? (trimmed, settings, $"{connector.Spec.DisplayName} takes no sign-in.")
-            : (trimmed, settings, problem ?? apps.ProblemFor(connector.Spec.Id));
+            : (trimmed, settings, problem ?? await apps.ProblemForAsync(connector.Spec.Id, workspaceId, ct));
     }
 
     /// <summary>Keeps a connection signed in to its provider, with the tokens the sign-in brought back.</summary>
@@ -107,7 +109,7 @@ public sealed class ConnectionMaker(
             return "This connection reads no file.";
         }
 
-        var check = await connector.CheckAsync(ConfigOf(connection) with { Files = FilesOf(connector, file.FileName, file.StoredFile) }, ct);
+        var check = await connector.CheckAsync(await ConfigOfAsync(connection, ct) with { Files = FilesOf(connector, file.FileName, file.StoredFile) }, ct);
         if (!check.Succeeded)
         {
             files.Delete(file.StoredFile);
@@ -146,7 +148,7 @@ public sealed class ConnectionMaker(
 
         try
         {
-            return (await connector.DiscoverAsync(ConfigOf(connection), ct), null);
+            return (await connector.DiscoverAsync(await ConfigOfAsync(connection, ct), ct), null);
         }
         catch (ConnectorException ex)
         {

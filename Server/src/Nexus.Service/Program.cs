@@ -55,8 +55,8 @@ builder.Services.AddDbContext<NexusDbContext>((services, options) => services.Ge
 
 builder.Services.AddSingleton(builder.Configuration.GetSection(SchwabApp.Section).Get<SchwabApp>() ?? new SchwabApp());
 builder.Services.AddHttpClient(OAuthApps.SchwabHttpClient);
-builder.Services.AddSingleton<OAuthApps>();
-builder.Services.AddSingleton<SignIns>();
+builder.Services.AddScoped<OAuthApps>();
+builder.Services.AddScoped<SignIns>();
 builder.Services.AddSingleton(services => SourceConnectors.Defaults(new SchwabSource(
     services.GetRequiredService<IHttpClientFactory>().CreateClient(OAuthApps.SchwabHttpClient),
     services.GetRequiredService<TimeProvider>())));

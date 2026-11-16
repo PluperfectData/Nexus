@@ -288,6 +288,43 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("pairings", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.ProviderApp", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("ClientSecret")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<string>("Connector")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "Connector")
+                        .IsUnique();
+
+                    b.ToTable("provider_apps", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.RefreshToken", b =>
                 {
                     b.Property<long>("Id")
@@ -385,6 +422,62 @@ namespace Nexus.Service.Storage.Migrations
                     b.HasIndex("SyncId");
 
                     b.ToTable("runs", (string)null);
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.StoredSignIn", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("ConnectionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Connector")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<long?>("SessionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SessionToken")
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<string>("Settings")
+                        .HasColumnType("longtext");
+
+                    b.Property<string>("StateHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("StateHash")
+                        .IsUnique();
+
+                    b.HasIndex("WorkspaceId");
+
+                    b.ToTable("sign_ins", (string)null);
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.Sync", b =>
@@ -577,6 +670,17 @@ namespace Nexus.Service.Storage.Migrations
                     b.Navigation("App");
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.ProviderApp", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.Run", b =>
                 {
                     b.HasOne("Nexus.Service.Storage.Sync", "Sync")
@@ -586,6 +690,17 @@ namespace Nexus.Service.Storage.Migrations
                         .IsRequired();
 
                     b.Navigation("Sync");
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.StoredSignIn", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.Sync", b =>

@@ -176,14 +176,25 @@ public sealed class SyncRunTests
         _factory.Push.Tables["orders"].ShouldBe(["""[1,"pen"]"""]);
     }
 
-    private async Task<int> SeedAsync(SyncMode mode, string key = FakePush.Key)
+    [Test]
+    public async Task A_run_of_a_Schwab_connection_in_a_workspace_with_no_Schwab_app_fails_and_says_why()
+    {
+        var syncId = await SeedAsync(SyncMode.FullRefresh, connector: OAuthApps.SchwabId);
+
+        var run = await RunAsync(syncId);
+
+        run.Status.ShouldBe(RunStatus.Failed);
+        run.Error.ShouldBe("This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.");
+    }
+
+    private async Task<int> SeedAsync(SyncMode mode, string key = FakePush.Key, string connector = FakeSource.Id)
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NexusDbContext>();
-        return await SeedAsync(db, scope.ServiceProvider.GetRequiredService<Secrets>(), mode, SyncStatus.Ready, key);
+        return await SeedAsync(db, scope.ServiceProvider.GetRequiredService<Secrets>(), mode, SyncStatus.Ready, key, connector);
     }
 
-    private static async Task<int> SeedAsync(NexusDbContext db, Secrets secrets, SyncMode mode, SyncStatus status, string key)
+    private static async Task<int> SeedAsync(NexusDbContext db, Secrets secrets, SyncMode mode, SyncStatus status, string key, string connector = FakeSource.Id)
     {
         var now = DateTime.UtcNow;
         var workspace = new Workspace { Name = "Acme", CreatedAt = now };
@@ -193,7 +204,7 @@ public sealed class SyncRunTests
         {
             Workspace = workspace,
             Name = "Shop",
-            Connector = FakeSource.Id,
+            Connector = connector,
             Settings = secrets.Protect(new Dictionary<string, string?> { ["host"] = "db.test" }),
             CreatedAt = now,
         };
