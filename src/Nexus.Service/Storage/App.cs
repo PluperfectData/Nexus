@@ -19,6 +19,9 @@ public sealed class App
     /// <summary>The start of the app's key, shown to tell keys apart.</summary>
     public string? KeyPrefix { get; set; }
 
+    /// <summary>When the app's key was made, shown beside its prefix; null once it is revoked.</summary>
+    public DateTime? KeyCreatedAt { get; set; }
+
     /// <summary>The addresses its connect pages may return to, as a JSON array.</summary>
     public string ReturnUrls { get; set; } = "[]";
 

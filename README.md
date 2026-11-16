@@ -1,6 +1,7 @@
 # Nexus
 
 [![Build and test](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml)
+[![Client](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml)
 
 Source and destination connectors for .NET 10. A source reads streams of records; a destination writes
 them; an action changes something on a service, such as placing an order. A source runs standalone with
@@ -18,6 +19,7 @@ records in memory, or piped into a destination.
 | `src/Nexus.SqlServer` | `SqlServerSource` |
 | `src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
 | `src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
+| `client` | The service's pages, a React client: signing in, workspaces, and for admins, users |
 | `tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
 | `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
 | `tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
@@ -176,8 +178,10 @@ The original exception is `InnerException`.
 ## Push destination
 
 `PushDestination`, id `push`, writes each stream to a table of the same name through an app's push API, such
-as Scry's. Settings: `url`, the push API's address, such as `http://localhost:6161/ingest`, and `key`, a push
-API key, which is secret. `CheckAsync` calls `GET {url}`, which names the key.
+as Scry's. Settings: `url`, the push API's address, such as `http://localhost:6161/ingest`; `key`, a push
+API key, which is secret; and `origin`, optional, which says where the rows come from and goes with each
+table's columns when it is made or replaced. `IdentifyAsync` calls `GET {url}`, which names the key, and answers
+its name and prefix. `CheckAsync` does the same and answers whether it worked.
 
 | Write mode | Requests |
 |---|---|
@@ -452,10 +456,10 @@ dotnet run --project tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --mo
 
 ## Service
 
-`src/Nexus.Service` keeps workspaces, apps, their destinations, connections, and syncs in a MySQL database of its
-own, and runs each sync by reading its stream through a source connector and writing it through
-`PushDestination`. It reads through the MySQL, PostgreSQL, and SQL Server sources. It has no routes yet beyond
-`GET /health`.
+`src/Nexus.Service` keeps users, workspaces, apps, their destinations, connections, and syncs in a MySQL
+database of its own, and runs each sync by reading its stream through a source connector and writing it
+through `PushDestination`. It reads through the MySQL, PostgreSQL, and SQL Server sources. `client/` holds its
+pages.
 
 - A worker runs queued syncs one at a time. A full refresh overwrites its table. An incremental sync upserts
   by the stream's primary key, or appends when there is none, and resumes from the last checkpoint the
@@ -463,11 +467,89 @@ own, and runs each sync by reading its stream through a source connector and wri
 - A `Transient` or `RateLimited` failure runs again after 1, 5, and 15 minutes, or after a longer wait the
   provider asked for, then stops. An `AuthExpired` failure marks the connection as needing a sign-in.
 - A sync that was queued or running when the service stopped runs again when it starts.
-- Connection settings, tokens, and push keys are encrypted with ASP.NET Data Protection. Its keys live in
-  `data/keys`, beside the service, outside the database they protect.
+- Each run tells the push API where the table's rows come from: the workspace, the connection, its connector,
+  and the stream.
+- Removing a destination, or the app it belongs to, leaves its syncs in place without one. Such a sync does not
+  run until someone picks another destination for it, and a run already queued fails and says so.
+- Connection settings, tokens, push keys, and mailed links are protected with ASP.NET Data Protection. Its
+  keys live in `data/keys`, beside the service, outside the database they protect.
 
-Run it on `http://localhost:6163` with a MySQL 8.4 connection string as the user secret
-`ConnectionStrings:Nexus`. The service applies its migrations when it starts.
+### Users and sign-in
+
+There is no sign-up. An admin invites each user by mail, and makes and removes workspaces, their members,
+and apps. A member sees their own workspaces and changes their connections and syncs.
+
+The first admin comes from the setup page. When the service starts with no users, it writes a one-time setup
+code to its log, with the page's address, `/setup` on the client. The page takes the code, an email, and a
+password, and signs that admin in. A restart writes a new code until the instance has a user.
+
+- A user signs in with a password, or with a link mailed to them that works once, for 15 minutes. An invite
+  link works once, for 7 days. Mail goes through `Pluperfect.Mail`: Postmark on a box, and `.eml` files in
+  `data/mail` on this machine.
+- The session is `Pluperfect.Jwt`'s: an access token in an `HttpOnly` cookie, a refresh token that rotates,
+  and the origin and antiforgery checks on every unsafe request. Every route needs a session but `/health`
+  and the sign-in routes under `/auth`.
+- Five wrong passwords for one address lock it for 15 minutes, and one address gets at most three mailed
+  links in that time.
+- Setting a password ends the user's other sessions. A forgotten password is replaced by signing in with a
+  mailed link and setting a new one.
+
+| Route | Does |
+|---|---|
+| `GET /setup`, `POST /setup` | Whether the instance needs setting up, and making its first admin with the setup code |
+| `POST /auth/sign-in`, `POST /auth/link`, `POST /auth/link/redeem` | Signs in with a password, mails a link, or signs in with one |
+| `GET /auth/me`, `GET /auth/csrf`, `POST /auth/refresh`, `POST /auth/sign-out`, `PUT /auth/password` | The session and the signed-in user's password |
+| `/users` | Admins invite, change, and remove users |
+| `/workspaces`, `/workspaces/{id}/members/{userId}` | Workspaces and their members |
+| `/workspaces/{id}/apps`, `/apps/{id}`, `/apps/{id}/key`, `/apps/{id}/destinations`, `/destinations/{id}` | Apps, their keys, and their destinations. A key shows once, when it is made, and an app lists when its key was made. A destination is kept only once its key works, and records the push key's name and prefix. |
+| `POST /destinations/{id}/check` | Asks the push API whether it still takes the destination's key, and records the key's name and prefix, or why it was refused |
+| `GET /connectors` | The connectors and the settings each asks for |
+| `/workspaces/{id}/connections`, `/connections/{id}`, `GET /connections/{id}/streams` | Connections, kept only once their settings connect, and their streams |
+| `/workspaces/{id}/syncs`, `POST /connections/{id}/syncs`, `POST /syncs/{id}/run`, `GET /syncs/{id}/runs`, `DELETE /syncs/{id}` | Syncs, their runs, and running one now |
+| `PATCH /syncs/{id}` | Changes a sync's destination, table name, and read mode from `{destinationId, table, mode, cursorField}`, and queues a run that reads from the start. The table it wrote before stays. |
+| `GET /pairings/{id}`, `POST /pairings/{id}/approve`, `POST /pairings/{id}/decline` | Admins see a pairing and approve it into a workspace, or decline it |
+
+### Apps and connect pages
+
+An app, such as Scry, links to Nexus by pairing, with no key copied by hand:
+
+1. The app's server calls `POST /pairings` with its name, its push API's address, the callback for the admin's
+   return, its connect pages' return address, and the SHA-256 hash of a verifier it keeps. Nexus answers the
+   approval page's address, `/pair?id=...` on the client.
+2. An admin signs in there, picks a workspace, and approves. Nexus sends them to the callback with `?pairing=<id>`,
+   or with `?error=declined`.
+3. The app's server calls `POST /pairings/{id}/claim` with the verifier and a push key for its push API. Nexus
+   checks the key, makes the app and its destination, and answers the app's key, once.
+
+A pairing lasts 10 minutes and is claimed once. `POST /pairings` and the claim take no session, since only
+the app's server calls them. An admin can still make an app by hand on its workspace's page.
+
+The app sends its key as `Authorization: Bearer nexus_...`. A key reaches only the routes below, and only the
+syncs into its own app's destinations.
+
+| Route | Does |
+|---|---|
+| `GET /app` | The app itself: its name, its workspace, its destinations with their ids, and its return addresses |
+| `DELETE /app/key` | Revokes the app's own key, as an app does when it unlinks |
+| `GET /connectors` | The connectors and the settings each asks for |
+| `POST /connect-sessions` | From `{"connector", "destinationId", "returnUrl"}`, opens a connect page and answers its address. The destination must be the app's, and the return address one an admin added to the app. |
+| `GET /syncs` | The app's syncs, each with how its last run went and whether its connection needs a new sign-in |
+| `POST /syncs/{id}/run`, `DELETE /syncs/{id}` | Runs one of the app's syncs now, or removes it |
+
+A connect page is for one person, who needs no user in the instance. It lasts 10 minutes, makes one connection
+in the app's workspace, adds the syncs the person picks into the app's destination, and sends them back to the
+return address with `?connection=<id>`, or `?error=cancelled` when they cancel. The page's address carries its
+token after the `#`, and the page sends it as `Authorization: Bearer nxc_...` to `GET /connect`,
+`POST /connect/connection`, `GET /connect/streams`, `POST /connect/syncs`, and `POST /connect/cancel`.
+
+A request that carries an `Authorization` header skips the antiforgery check, since another site's page cannot
+send one without a CORS preflight, which the service answers for its client's origin alone.
+
+### Running it
+
+The service runs on `http://localhost:6163` and its client on `http://localhost:6165`. Set a MySQL 8.4
+connection string as a user secret. The service applies its migrations when it starts, and on a start with
+no users writes the setup code to its log.
 
 ```bash
 dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project src/Nexus.Service
@@ -476,6 +558,28 @@ dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus
 ```bash
 dotnet run --project src/Nexus.Service
 ```
+
+```bash
+npm install --prefix client
+```
+
+```bash
+npm run dev --prefix client
+```
+
+The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` beside `Pluperfect.Data`, and
+the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pluperfect.Jwt/client` once with
+`npm run build` before installing the client.
+
+To make or restore an admin, such as when every admin is locked out, run the service with `add-admin`. It
+prints a link that signs them in once, within an hour, and exits.
+
+```bash
+dotnet run --project src/Nexus.Service -- add-admin you@example.com
+```
+
+On a box, the service needs `Jwt__SigningKey`, at least 32 bytes, `Mail__ServerToken`, Postmark's server
+token, `Nexus__MailFrom`, an address on a domain Postmark may send as, and `Nexus__ClientOrigin`.
 
 ## Usage
 

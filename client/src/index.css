@@ -1,0 +1,510 @@
+/* Light is the default. Dark is chosen with the header's toggle, which sets data-theme on <html>. */
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --raised: #f8fafc;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --error: #e11d48;
+  --success: #059669;
+  --header-bg: #2563eb;
+  --header-text: #ffffff;
+  --header-muted: #dbeafe;
+  --header-border: #1d4ed8;
+  --header-control: rgb(255 255 255 / 0.4);
+  --gutter: 1rem;
+  color-scheme: light;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --raised: #1a1a1a;
+  --text: #e5e5e5;
+  --muted: #9a9a9a;
+  --border: #262626;
+  --accent: #7c93c9;
+  --accent-text: #0a0a0a;
+  --error: #c98a94;
+  --success: #7fb59a;
+  --header-bg: #1b2438;
+  --header-text: #e5e5e5;
+  --header-muted: #a9b4cc;
+  --header-border: #2a3550;
+  --header-control: #3d4a6b;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--accent);
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.75rem;
+}
+
+p {
+  overflow-wrap: anywhere;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: -999px;
+}
+
+.skip:focus {
+  left: var(--gutter);
+  top: 0.5rem;
+  z-index: 30;
+}
+
+/* The header row is full bleed: the gutter stays, the content column's maximum width does not. */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
+  color: var(--header-text);
+}
+
+/* The browser's own focus ring is blue, and would vanish against the header. */
+.site-header :focus-visible {
+  outline: 2px solid var(--header-text);
+  outline-offset: 2px;
+}
+
+.site-header .icon-button {
+  border-color: var(--header-control);
+  color: var(--header-text);
+}
+
+.site-header > .wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem var(--gutter);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--header-text);
+  text-decoration: none;
+  margin-right: auto;
+}
+
+.brand-mark {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.nav a {
+  color: var(--header-muted);
+  text-decoration: none;
+}
+
+.nav a.is-active,
+.nav a:hover {
+  color: var(--header-text);
+}
+
+.nav a.is-active {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.4em;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.icon-button {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: none;
+  color: var(--text);
+}
+
+.nav-toggle {
+  display: none;
+}
+
+/* The two links, the brand, and the header's buttons run out of room near 25rem. */
+@media (max-width: 28rem) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .nav {
+    display: none;
+  }
+
+  .nav[data-open] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 0.75rem var(--gutter);
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--header-border);
+  }
+}
+
+.account {
+  position: relative;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 14rem;
+  max-width: calc(100vw - 2 * var(--gutter));
+  padding: 0.5rem 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  color: var(--text);
+}
+
+/* The header's focus ring is its text color, which would vanish on the menu. */
+.site-header .account-menu :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.account-who {
+  display: grid;
+  margin: 0 0 0.25rem;
+  padding: 0.25rem 1rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.account-menu a,
+.account-menu button {
+  display: block;
+  padding: 0.5rem 1rem;
+  background: none;
+  border-radius: 0;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+}
+
+.account-menu a:hover,
+.account-menu button:hover {
+  background: var(--raised);
+}
+
+.page {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1.5rem var(--gutter);
+}
+
+.page.narrow {
+  max-width: 28rem;
+}
+
+section {
+  margin-top: 2rem;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-head h1,
+.section-head h2 {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--error);
+}
+
+.success {
+  color: var(--success);
+}
+
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.form.stacked {
+  grid-template-columns: 1fr;
+}
+
+.form.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.form .check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+}
+
+.form .wide {
+  grid-column: 1 / -1;
+}
+
+/* A select is as wide as its longest option unless capped, and destination labels are long. */
+.form select {
+  max-width: 100%;
+}
+
+/* Wide enough that a typical address fits on one line. */
+.return-urls {
+  flex: 1 1 36rem;
+}
+
+.return-urls textarea {
+  width: 100%;
+  resize: none;
+}
+
+.form p {
+  margin: 0;
+}
+
+.panel {
+  padding: 1rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  min-width: 0;
+}
+
+input,
+select,
+textarea {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
+button {
+  padding: 0.5rem 0.9rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: none;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+button.quiet {
+  background: none;
+  color: var(--muted);
+  padding: 0.25rem 0.5rem;
+}
+
+.link-button {
+  background: none;
+  padding: 0;
+  color: var(--accent);
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.list.cards > li {
+  display: block;
+}
+
+.list p {
+  margin: 0.25rem 0 0;
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sublist {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.sublist li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.tables-block {
+  margin-top: 0.75rem;
+}
+
+.section-head h3 {
+  margin: 0;
+}
+
+.tables {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 0.75rem;
+  border-left: 2px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+}
+
+.tables > li {
+  overflow-wrap: anywhere;
+}
+
+.tables .form {
+  margin-top: 0.5rem;
+}
+
+.streams {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.75rem;
+}
+
+.stream-pick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  align-items: end;
+  gap: 0.5rem;
+}

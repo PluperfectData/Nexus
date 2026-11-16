@@ -23,6 +23,8 @@ public sealed partial class SyncRunner(
     TimeProvider time,
     ILogger<SyncRunner> logger)
 {
+    public const string NoDestination = "Its destination was removed. Pick a new one to send it to.";
+
     /// <summary>
     /// Runs the sync and records how it went, on the run and on the sync. Answers how long to wait before trying again,
     /// or null when the run succeeded, failed for good, or found no sync.
@@ -30,7 +32,7 @@ public sealed partial class SyncRunner(
     public async Task<TimeSpan?> RunAsync(int syncId, int attempt, CancellationToken ct)
     {
         var sync = await db.Syncs
-            .Include(s => s.Connection)
+            .Include(s => s.Connection).ThenInclude(c => c!.Workspace)
             .Include(s => s.Destination)
             .FirstOrDefaultAsync(s => s.Id == syncId, ct);
         if (sync is null)
@@ -78,11 +80,14 @@ public sealed partial class SyncRunner(
         var connection = sync.Connection!;
         var source = connectors.Find(connection.Connector)
             ?? throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, $"'{connection.Connector}' is not a connector the service reads.");
+        var target = sync.Destination
+            ?? throw new ConnectorException(ConnectorErrorKind.ConfigInvalid, NoDestination);
         var sourceConfig = new ConnectorConfig(secrets.Unprotect(connection.Settings), Tokens: secrets.UnprotectTokens(connection.Tokens));
         var destinationConfig = new ConnectorConfig(new Dictionary<string, string?>
         {
-            [PushDestination.UrlSetting] = sync.Destination!.Url,
-            [PushDestination.KeySetting] = secrets.UnprotectText(sync.Destination.Key),
+            [PushDestination.UrlSetting] = target.Url,
+            [PushDestination.KeySetting] = secrets.UnprotectText(target.Key),
+            [PushDestination.OriginSetting] = OriginOf(sync, source),
         });
 
         var incremental = sync.Mode == SyncMode.Incremental;
@@ -147,6 +152,10 @@ public sealed partial class SyncRunner(
             }
         }
     }
+
+    /// <summary>What the push API is told of where a table's rows come from.</summary>
+    internal static string OriginOf(Sync sync, ISourceConnector source) =>
+        $"Nexus workspace {sync.Connection!.Workspace!.Name}, connection {sync.Connection.Name} ({source.Spec.DisplayName}), stream {sync.Stream}";
 
     private static void Fail(Run run, ConnectorErrorKind? kind, string message)
     {

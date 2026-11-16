@@ -19,7 +19,8 @@ public sealed class Sync
 
     public Connection? Connection { get; set; }
 
-    public int DestinationId { get; set; }
+    /// <summary>The destination, or null once it was removed, until someone picks another.</summary>
+    public int? DestinationId { get; set; }
 
     public Destination? Destination { get; set; }
 

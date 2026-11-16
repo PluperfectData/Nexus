@@ -1,0 +1,43 @@
+{
+  "name": "nexus-client",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch"
+  },
+  "dependencies": {
+    "@pluperfect/jwt": "file:../../../Pluperfect.Jwt/client",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.4.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@babel/preset-env": "^7.29.7",
+    "@babel/preset-react": "^7.29.7",
+    "@babel/preset-typescript": "^7.29.7",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "babel-jest": "^30.5.2",
+    "babel-plugin-transform-vite-meta-env": "^1.0.3",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^30.5.2",
+    "jest-environment-jsdom": "^30.5.2",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0"
+  }
+}

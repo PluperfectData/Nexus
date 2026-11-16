@@ -18,7 +18,16 @@ internal sealed class FakeSource : ISourceConnector
         ["id"],
         [SyncMode.FullRefresh, SyncMode.Incremental]);
 
-    public ConnectorSpec Spec { get; } = new(Id, "Fake", "Reads canned orders.", "1.0.0", AuthKind.ConnectionFields, []);
+    /// <summary>A host that the check refuses.</summary>
+    public const string Unreachable = "nowhere.test";
+
+    public ConnectorSpec Spec { get; } = new(
+        Id,
+        "Fake",
+        "Reads canned orders.",
+        "1.0.0",
+        AuthKind.ConnectionFields,
+        [new SettingField("host", "Host", SettingKind.Text, Required: true), new SettingField("password", "Password", SettingKind.Secret, Required: false)]);
 
     public List<object?[]> Rows { get; } = [];
 
@@ -30,7 +39,10 @@ internal sealed class FakeSource : ISourceConnector
 
     public List<ConnectorConfig> Configs { get; } = [];
 
-    public Task<CheckResult> CheckAsync(ConnectorConfig config, CancellationToken ct) => Task.FromResult(CheckResult.Success);
+    public Task<CheckResult> CheckAsync(ConnectorConfig config, CancellationToken ct) =>
+        Task.FromResult(config.Values.GetValueOrDefault("host") == Unreachable
+            ? CheckResult.Failure(ConnectorErrorKind.ConfigInvalid, $"Could not reach {Unreachable}.")
+            : CheckResult.Success);
 
     public Task<SourceCatalog> DiscoverAsync(ConnectorConfig config, CancellationToken ct) => Task.FromResult(new SourceCatalog([Orders]));
 

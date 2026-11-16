@@ -19,6 +19,9 @@ internal sealed class FakePush : HttpMessageHandler
 
     public ConcurrentQueue<string> Requests { get; } = new();
 
+    /// <summary>The origin each table was last defined or replaced with.</summary>
+    public ConcurrentDictionary<string, string?> Origins { get; } = new();
+
     public int FailingBatches { get; set; }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -41,6 +44,7 @@ internal sealed class FakePush : HttpMessageHandler
         {
             case ("PUT", null):
                 Tables.TryAdd(table, []);
+                await KeepOriginAsync(table, request, cancellationToken);
                 return Answer(HttpStatusCode.OK, "{}");
 
             case ("POST", "replace"):
@@ -49,6 +53,7 @@ internal sealed class FakePush : HttpMessageHandler
                     return Answer(HttpStatusCode.NotFound, """{"detail":"No such source."}""");
                 }
 
+                await KeepOriginAsync(table, request, cancellationToken);
                 _staged[table] = [];
                 return Answer(HttpStatusCode.OK, "{}");
 
@@ -87,6 +92,12 @@ internal sealed class FakePush : HttpMessageHandler
             default:
                 throw new InvalidOperationException($"No route for {request.Method} {path}.");
         }
+    }
+
+    private async Task KeepOriginAsync(string table, HttpRequestMessage request, CancellationToken ct)
+    {
+        using var schema = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(ct));
+        Origins[table] = schema.RootElement.TryGetProperty("origin", out var origin) ? origin.GetString() : null;
     }
 
     private static HttpResponseMessage Answer(HttpStatusCode status, string json) =>

@@ -6,8 +6,8 @@ namespace Nexus.Push;
 /// <summary>A stream's columns and rows as the push API's JSON, in the forms it reads each column type.</summary>
 internal static class PushValues
 {
-    /// <summary>The columns and key a table is made or replaced with.</summary>
-    public static byte[] Schema(StreamSpec spec)
+    /// <summary>The columns and key a table is made or replaced with, and where its rows come from when that is known.</summary>
+    public static byte[] Schema(StreamSpec spec, string? origin)
     {
         using var buffer = new MemoryStream();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -36,6 +36,11 @@ internal static class PushValues
             }
 
             writer.WriteEndArray();
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                writer.WriteString("origin", origin.Trim());
+            }
+
             writer.WriteEndObject();
         }
 

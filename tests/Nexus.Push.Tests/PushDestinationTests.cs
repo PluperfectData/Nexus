@@ -88,6 +88,33 @@ public sealed class PushDestinationTests
     }
 
     [Test]
+    public async Task Names_its_key_as_the_push_API_reports_it()
+    {
+        (await _destination.IdentifyAsync(Config(), default)).ShouldBe(new PushKey("Nexus", "scry_good"));
+
+        _ingest.Fail(HttpMethod.Get, "/ingest", HttpStatusCode.OK, "Hello.");
+        var unnamed = await Should.ThrowAsync<ConnectorException>(() => _destination.IdentifyAsync(Config(), default));
+        unnamed.Kind.ShouldBe(ConnectorErrorKind.ConfigInvalid);
+        unnamed.Message.ShouldBe("The address http://scry.test/ingest took the key but did not name it, so it is not a push API. Check the push API address.");
+    }
+
+    [Test]
+    public async Task Sends_where_the_rows_come_from_with_each_definition_and_replacement()
+    {
+        var config = new ConnectorConfig(
+            new Dictionary<string, string?>(Settings("http://scry.test/ingest", FakeIngest.Key)) { [PushDestination.OriginSetting] = "Nexus workspace Acme" });
+
+        await WriteAsync(config, WriteMode.Overwrite, new SchemaMessage(Orders), new RecordBatch("orders", [[1L, 1m]]));
+        await WriteAsync(WriteMode.Upsert, new SchemaMessage(Orders), new RecordBatch("orders", [[2L, 2m]]));
+
+        var schemas = _ingest.Requests.Where(r => r.Method == HttpMethod.Put || r.Path.EndsWith("/replace", StringComparison.Ordinal)).ToList();
+        schemas.Select(r => r.ToString()).ShouldBe(
+            ["POST /ingest/sources/orders/replace", "PUT /ingest/sources/orders", "POST /ingest/sources/orders/replace", "PUT /ingest/sources/orders"]);
+        schemas.Take(3).Select(r => r.Body!.Value.GetProperty("origin").GetString()).ShouldBe(["Nexus workspace Acme", "Nexus workspace Acme", "Nexus workspace Acme"]);
+        schemas[3].Body!.Value.TryGetProperty("origin", out _).ShouldBeFalse();
+    }
+
+    [Test]
     public async Task Overwrites_through_a_replacement_and_holds_checkpoints_until_it_swaps_in()
     {
         var seen = await WriteAsync(
@@ -263,11 +290,14 @@ public sealed class PushDestinationTests
 
     // Each stream in the messages is written with one mode. Each checkpoint comes back with the count of requests sent
     // before it was yielded.
-    private async Task<List<(StateCheckpoint Checkpoint, int SentBefore)>> WriteAsync(WriteMode mode, params SyncMessage[] messages)
+    private Task<List<(StateCheckpoint Checkpoint, int SentBefore)>> WriteAsync(WriteMode mode, params SyncMessage[] messages) =>
+        WriteAsync(Config(), mode, messages);
+
+    private async Task<List<(StateCheckpoint Checkpoint, int SentBefore)>> WriteAsync(ConnectorConfig config, WriteMode mode, params SyncMessage[] messages)
     {
         var modes = messages.OfType<SchemaMessage>().ToDictionary(schema => schema.Stream.Name, _ => mode);
         var seen = new List<(StateCheckpoint, int)>();
-        await foreach (var checkpoint in _destination.WriteAsync(Config(), new WriteRequest(modes), Messages(messages), default))
+        await foreach (var checkpoint in _destination.WriteAsync(config, new WriteRequest(modes), Messages(messages), default))
         {
             seen.Add((checkpoint, _ingest.Requests.Count));
         }

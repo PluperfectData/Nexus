@@ -45,10 +45,29 @@ internal sealed class PushApi
     }
 
     /// <summary>Asks the push API to name the key, which fails unless the key is one it made.</summary>
-    public async Task CheckKeyAsync(CancellationToken ct)
+    public async Task<PushKey> CheckKeyAsync(CancellationToken ct)
     {
         using var response = await SendAsync(HttpMethod.Get, _root, null, ct).ConfigureAwait(false);
         await EnsureAsync(response, null, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        try
+        {
+            using var named = JsonDocument.Parse(body);
+            var root = named.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("name", out var name) && name.ValueKind == JsonValueKind.String
+                && root.TryGetProperty("prefix", out var prefix) && prefix.ValueKind == JsonValueKind.String)
+            {
+                return new PushKey(name.GetString()!, prefix.GetString()!);
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        throw new ConnectorException(
+            ConnectorErrorKind.ConfigInvalid,
+            $"The address {_root} took the key but did not name it, so it is not a push API. Check the push API address.");
     }
 
     /// <summary>Makes the table, or adds the columns it lacks.</summary>

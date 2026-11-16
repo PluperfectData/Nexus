@@ -33,10 +33,31 @@ public sealed class SyncRunTests
         run.EndedAt.ShouldNotBeNull();
         _factory.Push.Tables["orders"].ShouldBe(["""[1,"pen"]""", """[2,"ink"]"""]);
         _factory.Push.Requests.ShouldContain("POST /ingest/sources/orders/replace");
+        _factory.Push.Origins["orders"].ShouldBe("Nexus workspace Acme, connection Shop (Fake), stream shop.orders");
         var sync = await FindSyncAsync(syncId);
         sync.Status.ShouldBe(SyncStatus.Ready);
         sync.Checkpoint.ShouldBeNull();
         _factory.Source.Configs.Single().Values["host"].ShouldBe("db.test");
+    }
+
+    [Test]
+    public async Task A_run_whose_destination_was_removed_fails_and_asks_for_another()
+    {
+        var syncId = await SeedAsync(SyncMode.FullRefresh);
+        await using (var db = _factory.NewContext())
+        {
+            await db.Destinations.ExecuteDeleteAsync();
+        }
+
+        var run = await RunAsync(syncId);
+
+        run.Status.ShouldBe(RunStatus.Failed);
+        run.ErrorKind.ShouldBe(ConnectorErrorKind.ConfigInvalid);
+        run.Error.ShouldBe(SyncRunner.NoDestination);
+        var sync = await FindSyncAsync(syncId);
+        sync.DestinationId.ShouldBeNull();
+        sync.Status.ShouldBe(SyncStatus.Failed);
+        _factory.Source.Reads.ShouldBeEmpty();
     }
 
     [Test]
@@ -171,6 +192,7 @@ public sealed class SyncRunTests
         var connection = new Connection
         {
             Workspace = workspace,
+            Name = "Shop",
             Connector = FakeSource.Id,
             Settings = secrets.Protect(new Dictionary<string, string?> { ["host"] = "db.test" }),
             CreatedAt = now,

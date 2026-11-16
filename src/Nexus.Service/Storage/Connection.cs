@@ -3,11 +3,16 @@ namespace Nexus.Service.Storage;
 /// <summary>A connector in a workspace, with its settings and any sign-in.</summary>
 public sealed class Connection
 {
+    public const int MaxNameLength = 200;
+
     public int Id { get; set; }
 
     public int WorkspaceId { get; set; }
 
     public Workspace? Workspace { get; set; }
+
+    /// <summary>What its workspace calls it, such as "Shop database".</summary>
+    public required string Name { get; set; }
 
     /// <summary>The Nexus connector's id, such as <c>mysql</c>.</summary>
     public required string Connector { get; set; }

@@ -10,10 +10,17 @@ on:
 permissions:
   contents: read
 
+# The service references Pluperfect.Jwt and Pluperfect.Mail four levels up from its project folder:
+# Nexus.Service, src, Nexus, Pluperfect.Data. So this repository is checked out two levels deep, at
+# Pluperfect.Data/Nexus, and both libraries beside Pluperfect.Data at the workspace root.
+
 jobs:
   build:
     name: Build and test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Pluperfect.Data/Nexus
 
     services:
       mysql:
@@ -51,10 +58,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: Pluperfect.Data/Nexus
+
+      - uses: actions/checkout@v7
+        with:
+          repository: mnwachukwu/Pluperfect.Jwt
+          path: Pluperfect.Jwt
+
+      - uses: actions/checkout@v7
+        with:
+          repository: mnwachukwu/Pluperfect.Mail
+          path: Pluperfect.Mail
 
       - uses: actions/setup-dotnet@v6
         with:
-          global-json-file: global.json
+          global-json-file: Pluperfect.Data/Nexus/global.json
 
       - run: dotnet restore --locked-mode
       - run: dotnet build -c Release --no-restore
@@ -67,18 +86,34 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    defaults:
+      run:
+        working-directory: Pluperfect.Data/Nexus
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          path: Pluperfect.Data/Nexus
+
+      - uses: actions/checkout@v7
+        with:
+          repository: mnwachukwu/Pluperfect.Jwt
+          path: Pluperfect.Jwt
+
+      - uses: actions/checkout@v7
+        with:
+          repository: mnwachukwu/Pluperfect.Mail
+          path: Pluperfect.Mail
 
       - uses: actions/setup-dotnet@v6
         with:
-          global-json-file: global.json
+          global-json-file: Pluperfect.Data/Nexus/global.json
 
       - run: dotnet restore --locked-mode
       - run: dotnet pack -c Release --no-restore -o artifacts -p:Version="${GITHUB_REF_NAME#v}"
 
+      # Only Nexus's own packages: the solution lists the two sibling libraries too, and they are not released here.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" artifacts/*.nupkg --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" artifacts/Nexus.*.nupkg --verify-tag --generate-notes

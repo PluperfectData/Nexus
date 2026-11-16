@@ -70,6 +70,11 @@
           "EmptyFiles": "4.4.0"
         }
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.6.2",
+        "contentHash": "7oWOcvnntmMKNzDLsdxAYqApt+AjpRpP2CShjMfIa3umZ42UQMvH0tl1qAliYPNYO6vTdcGMqnRrCPmsfzTI1w=="
+      },
       "DiffEngine": {
         "type": "Transitive",
         "resolved": "11.3.0",
@@ -88,6 +93,14 @@
         "type": "Transitive",
         "resolved": "2.23.0",
         "contentHash": "nWArUZTdU7iqZLycLKWe0TDms48KKGE6pONH2terYNa8REXiqixrMOkf1sk5DHGMaUTqONU2YkS4SAXBhLStgw=="
+      },
+      "Microsoft.AspNetCore.Authentication.JwtBearer": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "0BgDfT1GoZnzjJOBwx5vFMK5JtqsTEas9pCEwd1/KKxNUAqFmreN60WeUoF+CsmSd9tOQuqWedvdBo/QqHuNTQ==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.0.1"
+        }
       },
       "Microsoft.AspNetCore.TestHost": {
         "type": "Transitive",
@@ -333,6 +346,19 @@
           "Microsoft.Extensions.Logging.Abstractions": "10.0.0"
         }
       },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "r+mSvm/Ryc/iYcc9zcUG5VP9EBB8PL1rgVU6macEaYk45vmGRk9PntM3aynFKN6s3Q4WW36kedTycIctctpTUQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Abstractions": "10.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Diagnostics": "10.0.0",
+          "Microsoft.Extensions.Logging": "10.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Options": "10.0.0"
+        }
+      },
       "Microsoft.Extensions.Logging": {
         "type": "Transitive",
         "resolved": "10.0.0",
@@ -423,6 +449,15 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
           "Microsoft.Extensions.Options": "10.0.0",
           "Microsoft.Extensions.Primitives": "10.0.0"
+        }
+      },
+      "Microsoft.Extensions.Options.DataAnnotations": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "nwyF0pUubUWgzxw5y0g1Vsp2n/Psv4V7HekgUTlFK/pNlzZaQOBp56ww5GFeg4GpaMK8Lu+02XIEjqzoIcFJGw==",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0",
+          "Microsoft.Extensions.Options": "10.0.0"
         }
       },
       "Microsoft.Extensions.Primitives": {
@@ -543,6 +578,15 @@
           "Newtonsoft.Json": "13.0.3"
         }
       },
+      "MimeKit": {
+        "type": "Transitive",
+        "resolved": "4.17.0",
+        "contentHash": "h/KXsCreJf8RpR/PSAtlbvYtZFndp9N8Wn1Bs248AL7ITyhn+AiIY5bLTvt60tbN2mu6g8KadtBNWygTji2lqg==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.6.2",
+          "System.Security.Cryptography.Pkcs": "10.0.0"
+        }
+      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.3",
@@ -643,6 +687,8 @@
           "Nexus.Postgres": "[1.0.0, )",
           "Nexus.Push": "[1.0.0, )",
           "Nexus.SqlServer": "[1.0.0, )",
+          "Pluperfect.Jwt": "[1.0.0, )",
+          "Pluperfect.Mail": "[1.0.0, )",
           "Pomelo.EntityFrameworkCore.MySql": "[9.0.0, )"
         }
       },
@@ -657,6 +703,25 @@
         "dependencies": {
           "Microsoft.Data.SqlClient": "[7.1.1, )",
           "Nexus.Sql": "[1.0.0, )"
+        }
+      },
+      "pluperfect.jwt": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.0, )"
+        }
+      },
+      "pluperfect.mail": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.0, )",
+          "Microsoft.Extensions.Http": "[10.0.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.0, )",
+          "Microsoft.Extensions.Options": "[10.0.0, )",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.0, )",
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.0, )",
+          "MimeKit": "[4.17.0, )",
+          "System.Security.Cryptography.Pkcs": "[10.0.13, )"
         }
       },
       "Microsoft.Data.SqlClient": {
@@ -789,9 +854,9 @@
       },
       "System.Security.Cryptography.Pkcs": {
         "type": "CentralTransitive",
-        "requested": "[9.0.21, )",
-        "resolved": "9.0.21",
-        "contentHash": "KD+oHoYIxwNCajjVe58WVwq9cRpum+Pg3tRveDRtkcaw6w3oc7sNBoMRtb5P5OehI3bgv1ucMpgjf8lpj5J96A=="
+        "requested": "[10.0.13, )",
+        "resolved": "10.0.13",
+        "contentHash": "a+EovgC1fBnwdlQ6cn3j4JFBfKqiFaFvoAhjisOoSvazLAcIznaBzPQP0oYnvccmeXfqUH1KebVZOxSeH6rMaw=="
       }
     }
   }

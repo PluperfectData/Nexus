@@ -25,4 +25,10 @@
     <ProjectReference Include="..\Nexus.SqlServer\Nexus.SqlServer.csproj" />
   </ItemGroup>
 
+  <!-- Sibling checkouts beside Pluperfect.Data, four levels up, not packages. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\Pluperfect.Jwt\src\Pluperfect.Jwt\Pluperfect.Jwt.csproj" />
+    <ProjectReference Include="..\..\..\..\Pluperfect.Mail\src\Pluperfect.Mail\Pluperfect.Mail.csproj" />
+  </ItemGroup>
+
 </Project>

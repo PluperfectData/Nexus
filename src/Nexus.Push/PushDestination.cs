@@ -19,6 +19,9 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
     /// <summary>The settings key for the push API key.</summary>
     public const string KeySetting = "key";
 
+    /// <summary>The settings key for where the rows come from, which the push API keeps beside each table. Optional.</summary>
+    public const string OriginSetting = "origin";
+
     /// <summary>The most rows one batch carries.</summary>
     public const int MaxBatchRows = 5_000;
 
@@ -38,22 +41,29 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
         [
             new SettingField(UrlSetting, "Push API address", SettingKind.Text, Required: true),
             new SettingField(KeySetting, "Push API key", SettingKind.Secret, Required: true),
+            new SettingField(OriginSetting, "Where the rows come from", SettingKind.Text, Required: false),
         ]);
 
     /// <inheritdoc />
     public async Task<CheckResult> CheckAsync(ConnectorConfig config, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(config);
-
         try
         {
-            await PushApi.From(config, _retry).CheckKeyAsync(ct).ConfigureAwait(false);
+            await IdentifyAsync(config, ct).ConfigureAwait(false);
             return CheckResult.Success;
         }
         catch (ConnectorException ex)
         {
             return CheckResult.Failure(ex.Kind, ex.Message);
         }
+    }
+
+    /// <summary>The key's name and prefix, as the push API reports them.</summary>
+    /// <exception cref="ConnectorException">The address or the key is wrong, or the push API refused the key.</exception>
+    public Task<PushKey> IdentifyAsync(ConnectorConfig config, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        return PushApi.From(config, _retry).CheckKeyAsync(ct);
     }
 
     /// <inheritdoc />
@@ -68,6 +78,7 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
         ArgumentNullException.ThrowIfNull(messages);
 
         var api = PushApi.From(config, _retry);
+        var origin = config.Values.GetValueOrDefault(OriginSetting);
         // Batch ids are unique to this write, so the app skips a batch that a retry sends twice.
         var write = Guid.NewGuid().ToString("N");
         var streams = new Dictionary<string, PushStream>(StringComparer.Ordinal);
@@ -83,7 +94,7 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
                         throw new InvalidOperationException($"Stream '{schema.Stream.Name}' sent its schema twice.");
                     }
 
-                    streams[schema.Stream.Name] = await StartAsync(api, schema.Stream, request, streams.Count, ct).ConfigureAwait(false);
+                    streams[schema.Stream.Name] = await StartAsync(api, schema.Stream, request, origin, streams.Count, ct).ConfigureAwait(false);
                     break;
 
                 case RecordBatch batch:
@@ -129,7 +140,7 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
         }
     }
 
-    private static async Task<PushStream> StartAsync(PushApi api, StreamSpec spec, WriteRequest request, int number, CancellationToken ct)
+    private static async Task<PushStream> StartAsync(PushApi api, StreamSpec spec, WriteRequest request, string? origin, int number, CancellationToken ct)
     {
         if (!request.Modes.TryGetValue(spec.Name, out var mode))
         {
@@ -143,7 +154,7 @@ public sealed class PushDestination(HttpClient client, HttpRetryOptions? retryOp
                 $"Stream '{spec.Name}' has no primary key, so it cannot be upserted.");
         }
 
-        var schema = PushValues.Schema(spec);
+        var schema = PushValues.Schema(spec, origin);
         if (mode != WriteMode.Overwrite)
         {
             await api.DefineAsync(spec.Name, schema, ct).ConfigureAwait(false);

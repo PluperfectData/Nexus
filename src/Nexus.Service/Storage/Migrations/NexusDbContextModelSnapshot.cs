@@ -33,6 +33,9 @@ namespace Nexus.Service.Storage.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
 
+                    b.Property<DateTime?>("KeyCreatedAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("KeyHash")
                         .HasMaxLength(64)
                         .HasColumnType("varchar(64)");
@@ -63,6 +66,61 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("apps", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.ConnectSession", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AppId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ConnectionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Connector")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int>("DestinationId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ReturnUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppId");
+
+                    b.HasIndex("ConnectionId");
+
+                    b.HasIndex("DestinationId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("connect_sessions", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.Connection", b =>
                 {
                     b.Property<int>("Id")
@@ -78,6 +136,11 @@ namespace Nexus.Service.Storage.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
 
                     b.Property<bool>("NeedsSignIn")
                         .HasColumnType("tinyint(1)");
@@ -117,6 +180,21 @@ namespace Nexus.Service.Storage.Migrations
                         .IsRequired()
                         .HasColumnType("longtext");
 
+                    b.Property<DateTime?>("KeyCheckedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("KeyName")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("KeyPrefix")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("KeyProblem")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)");
+
                     b.Property<string>("Url")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -127,6 +205,132 @@ namespace Nexus.Service.Storage.Migrations
                     b.HasIndex("AppId");
 
                     b.ToTable("destinations", (string)null);
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.Pairing", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("AppId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AppName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<int?>("ApprovedById")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CallbackUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<DateTime?>("ClaimedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("ConnectReturnUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("DeclinedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("IngestUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("varchar(2000)");
+
+                    b.Property<string>("PublicId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<string>("VerifierHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<int?>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.ToTable("pairings", (string)null);
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.RefreshToken", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("varchar(254)");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("IssuedForIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<bool>("Persistent")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<long?>("ReplacedById")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("refresh_tokens", (string)null);
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.Run", b =>
@@ -193,7 +397,7 @@ namespace Nexus.Service.Storage.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)");
 
-                    b.Property<int>("DestinationId")
+                    b.Property<int?>("DestinationId")
                         .HasColumnType("int");
 
                     b.Property<string>("Mode")
@@ -228,6 +432,45 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("syncs", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.User", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(254)
+                        .HasColumnType("varchar(254)");
+
+                    b.Property<bool>("IsAdmin")
+                        .HasColumnType("tinyint(1)");
+
+                    b.Property<string>("LinkStamp")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("PasswordHash")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)");
+
+                    b.Property<DateTime?>("SignedInAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Email")
+                        .IsUnique();
+
+                    b.ToTable("users", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.Workspace", b =>
                 {
                     b.Property<int>("Id")
@@ -249,6 +492,21 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("workspaces", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.WorkspaceMember", b =>
+                {
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("WorkspaceId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("workspace_members", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.App", b =>
                 {
                     b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
@@ -258,6 +516,32 @@ namespace Nexus.Service.Storage.Migrations
                         .IsRequired();
 
                     b.Navigation("Workspace");
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.ConnectSession", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.App", "App")
+                        .WithMany()
+                        .HasForeignKey("AppId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Service.Storage.Connection", "Connection")
+                        .WithMany()
+                        .HasForeignKey("ConnectionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Nexus.Service.Storage.Destination", "Destination")
+                        .WithMany()
+                        .HasForeignKey("DestinationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("App");
+
+                    b.Navigation("Connection");
+
+                    b.Navigation("Destination");
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.Connection", b =>
@@ -304,12 +588,30 @@ namespace Nexus.Service.Storage.Migrations
                     b.HasOne("Nexus.Service.Storage.Destination", "Destination")
                         .WithMany()
                         .HasForeignKey("DestinationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Connection");
 
                     b.Navigation("Destination");
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.WorkspaceMember", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+
+                    b.Navigation("Workspace");
                 });
 #pragma warning restore 612, 618
         }
