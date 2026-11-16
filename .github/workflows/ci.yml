@@ -10,8 +10,8 @@ on:
 permissions:
   contents: read
 
-# The service references Pluperfect.Jwt and Pluperfect.Mail four levels up from its project folder:
-# Nexus.Service, src, Nexus, Pluperfect.Data. So this repository is checked out two levels deep, at
+# The service references Pluperfect.Jwt and Pluperfect.Mail five levels up from its project folder:
+# Nexus.Service, src, Server, Nexus, Pluperfect.Data. So this repository is checked out two levels deep, at
 # Pluperfect.Data/Nexus, and both libraries beside Pluperfect.Data at the workspace root.
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: Pluperfect.Data/Nexus
+        working-directory: Pluperfect.Data/Nexus/Server
 
     services:
       mysql:
@@ -73,7 +73,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          global-json-file: Pluperfect.Data/Nexus/global.json
+          global-json-file: Pluperfect.Data/Nexus/Server/global.json
 
       - run: dotnet restore --locked-mode
       - run: dotnet build -c Release --no-restore
@@ -88,7 +88,7 @@ jobs:
       contents: write
     defaults:
       run:
-        working-directory: Pluperfect.Data/Nexus
+        working-directory: Pluperfect.Data/Nexus/Server
 
     steps:
       - uses: actions/checkout@v7
@@ -107,7 +107,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          global-json-file: Pluperfect.Data/Nexus/global.json
+          global-json-file: Pluperfect.Data/Nexus/Server/global.json
 
       - run: dotnet restore --locked-mode
       - run: dotnet pack -c Release --no-restore -o artifacts -p:Version="${GITHUB_REF_NAME#v}"

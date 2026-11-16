@@ -18,6 +18,15 @@ var builder = WebApplication.CreateBuilder(args);
 var settings = builder.Configuration.GetSection(ServiceSettings.Section).Get<ServiceSettings>() ?? new ServiceSettings();
 var dataDirectory = Path.Combine(builder.Environment.ContentRootPath, settings.DataDirectory);
 
+#if DEBUG
+// `reset` sets aside the stored settings, so the next start opens the installer at its first step.
+if (args is ["reset"])
+{
+    Environment.ExitCode = InstanceReset.Run(builder.Environment.IsDevelopment(), dataDirectory, builder.Configuration, Console.Out, TimeProvider.System);
+    return;
+}
+#endif
+
 const string PushClient = "push";
 
 // Development runs over plain http, so its cookies drop the __Host- prefix and the Secure flag. Sessions and the

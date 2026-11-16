@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# The client takes @pluperfect/jwt from file:../../../Pluperfect.Jwt/client, three levels up from client: Nexus,
+# The client takes @pluperfect/jwt from file:../../../Pluperfect.Jwt/client, three levels up from Client: Nexus,
 # Pluperfect.Data, then the workspace root. So this repository is checked out at Pluperfect.Data/Nexus.
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: Pluperfect.Data/Nexus/client
+        working-directory: Pluperfect.Data/Nexus/Client
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: Pluperfect.Data/Nexus/client/package-lock.json
+          cache-dependency-path: Pluperfect.Data/Nexus/Client/package-lock.json
 
       # The library's dist is not committed, so it is built before the client installs it.
       - name: Build Pluperfect.Jwt's client

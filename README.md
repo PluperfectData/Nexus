@@ -9,25 +9,25 @@ records in memory, or piped into a destination.
 
 | Path | Contents |
 |---|---|
-| `src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync`, `Tap` |
-| `src/Nexus.Csv` | `CsvSource` |
-| `src/Nexus.DuckDb` | `DuckDbDestination` |
-| `src/Nexus.Push` | `PushDestination`, which writes through an app's push API, such as Scry's |
-| `src/Nexus.Sql` | `SqlSettings` and the reader shared by the SQL sources |
-| `src/Nexus.MySql` | `MySqlSource` |
-| `src/Nexus.Postgres` | `PostgresSource` |
-| `src/Nexus.SqlServer` | `SqlServerSource` |
-| `src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
-| `src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
-| `client` | The service's pages, a React client: signing in, workspaces, and for admins, users |
-| `tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
-| `tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
-| `tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
-| `tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
-| `tests/Nexus.Push.Tests` | NUnit and Shouldly, against a fake that keeps Scry's push API contract |
-| `tests/Nexus.Schwab.Tests` | NUnit and Shouldly, against canned Schwab responses |
-| `tests/Nexus.Service.Tests` | NUnit and Shouldly, hosting the service over a SQLite file with a fake source and push API |
-| `tests/Nexus.Sql.Tests` | NUnit and Shouldly, against real MySQL, PostgreSQL, and SQL Server servers |
+| `Server/src/Nexus.Abstractions` | Contracts, messages, errors, `HttpRetry`, `ReadToMemoryAsync`, `Tap` |
+| `Server/src/Nexus.Csv` | `CsvSource` |
+| `Server/src/Nexus.DuckDb` | `DuckDbDestination` |
+| `Server/src/Nexus.Push` | `PushDestination`, which writes through an app's push API, such as Scry's |
+| `Server/src/Nexus.Sql` | `SqlSettings` and the reader shared by the SQL sources |
+| `Server/src/Nexus.MySql` | `MySqlSource` |
+| `Server/src/Nexus.Postgres` | `PostgresSource` |
+| `Server/src/Nexus.SqlServer` | `SqlServerSource` |
+| `Server/src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
+| `Server/src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
+| `Client` | The service's pages, a React client: the installer, signing in, workspaces, and for admins, users and settings |
+| `Server/tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
+| `Server/tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
+| `Server/tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
+| `Server/tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
+| `Server/tests/Nexus.Push.Tests` | NUnit and Shouldly, against a fake that keeps Scry's push API contract |
+| `Server/tests/Nexus.Schwab.Tests` | NUnit and Shouldly, against canned Schwab responses |
+| `Server/tests/Nexus.Service.Tests` | NUnit and Shouldly, hosting the service over a SQLite file with a fake source and push API |
+| `Server/tests/Nexus.Sql.Tests` | NUnit and Shouldly, against real MySQL, PostgreSQL, and SQL Server servers |
 
 ## Connector matrix
 
@@ -405,7 +405,7 @@ The id comes from the `Location` header, and is null when Schwab sends none.
 
 ### Sign-in tool
 
-`tools/Nexus.Schwab.SignIn` signs in to Schwab in the browser and saves the tokens to its user secrets, id
+`Server/tools/Nexus.Schwab.SignIn` signs in to Schwab in the browser and saves the tokens to its user secrets, id
 `Nexus.Schwab.SignIn`. It is not packed.
 
 First, register the app on Schwab's developer portal with the callback URL the tool listens on:
@@ -429,7 +429,7 @@ dotnet user-secrets set Schwab:AppKey "<app key>" --id Nexus.Schwab.SignIn
 ```
 
 ```bash
-dotnet run --project tools/Nexus.Schwab.SignIn
+dotnet run --project Server/tools/Nexus.Schwab.SignIn
 ```
 
 - The tool listens on 127.0.0.1 at the callback URL's port, with a self-signed certificate made at run time,
@@ -442,7 +442,7 @@ With `read`, the tool runs the connector against Schwab with the saved sign-in. 
 DuckDB file, prints each stream's row count, and prints any warning the read sends. It only reads; orders stay off.
 
 ```bash
-dotnet run --project tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --movers '$SPX'
+dotnet run --project Server/tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --movers '$SPX'
 ```
 
 - `--from yyyy-MM-dd` sets where transactions and candles start, a year back by default. `--out path.duckdb` sets
@@ -456,9 +456,9 @@ dotnet run --project tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --mo
 
 ## Service
 
-`src/Nexus.Service` keeps users, workspaces, apps, their destinations, connections, and syncs in a MySQL
+`Server/src/Nexus.Service` keeps users, workspaces, apps, their destinations, connections, and syncs in a MySQL
 database of its own, and runs each sync by reading its stream through a source connector and writing it
-through `PushDestination`. It reads through the MySQL, PostgreSQL, SQL Server, and CSV sources. `client/` holds its
+through `PushDestination`. It reads through the MySQL, PostgreSQL, SQL Server, and CSV sources. `Client/` holds its
 pages.
 
 - A connection whose connector signs in, such as Schwab, is made by signing in. The sign-in starts from the
@@ -564,15 +564,15 @@ The service runs on `http://localhost:6163`, and on `https://127.0.0.1:6164` for
 on `http://localhost:6165`. Start both, then open `http://localhost:6165/install`.
 
 ```bash
-dotnet run --project src/Nexus.Service
+dotnet run --project Server/src/Nexus.Service
 ```
 
 ```bash
-npm install --prefix client
+npm install --prefix Client
 ```
 
 ```bash
-npm run dev --prefix client
+npm run dev --prefix Client
 ```
 
 The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` beside `Pluperfect.Data`, and
@@ -610,6 +610,15 @@ The settings are kept in `data/instance.json`, with the database password, the P
 signing key encrypted by the Data Protection keys in `data/keys`. The service makes the signing key on its first
 start. On a box, `data/` must persist across releases.
 
+A Debug build has one more command, `reset`, which sets `data/instance.json` aside under a dated name, so the next
+start opens the installer at its first step. The database, `data/keys`, and `data/files` stay: entering the same
+database in the installer adopts it again, and a new name starts empty. It refuses outside Development, and a
+Release build has no such command. Stop the service before running it.
+
+```bash
+dotnet run --project Server/src/Nexus.Service -- reset
+```
+
 ### Configuration
 
 Every setting the installer and the Settings page take can be set in configuration instead, for an operator or for
@@ -628,7 +637,7 @@ debugging. A configured value wins over the stored one, and the pages show it wi
 For example, as a user secret:
 
 ```bash
-dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project src/Nexus.Service
+dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project Server/src/Nexus.Service
 ```
 
 To sign in to Schwab, the service needs the Schwab app's key and secret, and the callback the Settings page shows,
@@ -636,17 +645,17 @@ To sign in to Schwab, the service needs the Schwab app's key and secret, and the
 `Nexus:Schwab:CallbackUrl` sets a different callback for Schwab alone.
 
 ```bash
-dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project src/Nexus.Service
+dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project Server/src/Nexus.Service
 ```
 
 ```bash
-dotnet user-secrets set Nexus:Schwab:AppSecret "<app secret>" --project src/Nexus.Service
+dotnet user-secrets set Nexus:Schwab:AppSecret "<app secret>" --project Server/src/Nexus.Service
 ```
 
 `add-admin` makes or restores an admin, prints a link that signs them in once, within an hour, and exits.
 
 ```bash
-dotnet run --project src/Nexus.Service -- add-admin you@example.com
+dotnet run --project Server/src/Nexus.Service -- add-admin you@example.com
 ```
 
 ## Usage
@@ -691,22 +700,22 @@ var placed = await new SchwabOrders(httpClient).PlaceAsync(
 
 ## Build
 
-.NET SDK 10.0.302 or a later feature band (`global.json`).
+.NET SDK 10.0.302 or a later feature band (`Server/global.json`).
 
 ```bash
-dotnet build Nexus.slnx
+dotnet build Server/Nexus.slnx
 ```
 
 ```bash
-dotnet test Nexus.slnx
+dotnet test Server/Nexus.slnx
 ```
 
 Restores are locked to `packages.lock.json`. After a dependency change, run
 `dotnet restore --force-evaluate` and commit the lock files.
 
-`tests/Nexus.Schwab.Tests` answers every request from canned responses and needs no Schwab account.
+`Server/tests/Nexus.Schwab.Tests` answers every request from canned responses and needs no Schwab account.
 
-`tests/Nexus.Sql.Tests` needs a MySQL, a PostgreSQL, and a SQL Server server. Each fixture creates a
+`Server/tests/Nexus.Sql.Tests` needs a MySQL, a PostgreSQL, and a SQL Server server. Each fixture creates a
 database named `nexus_test_<id>` and drops it afterwards, so each login needs permission to create and drop
 databases. Give one connection string per server, as a user secret or an environment variable:
 
@@ -717,7 +726,7 @@ databases. Give one connection string per server, as a user secret or an environ
 | `ConnectionStrings:SqlServer` | `ConnectionStrings__SqlServer` |
 
 ```bash
-dotnet user-secrets set ConnectionStrings:MySql "Server=localhost;User ID=...;Password=..." --project tests/Nexus.Sql.Tests
+dotnet user-secrets set ConnectionStrings:MySql "Server=localhost;User ID=...;Password=..." --project Server/tests/Nexus.Sql.Tests
 ```
 
 CI starts all three as service containers. Their password comes from the repository secret
