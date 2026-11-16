@@ -1,10 +1,16 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { editUser, inviteUser, listUsers, type Me, type User } from '../api'
+import { editUser, inviteUser, listUsers, type Me, reinviteUser, type User } from '../api'
 import { SessionContext } from '../session'
 import { UsersPage } from './UsersPage'
 
-jest.mock('../api', () => ({ ...jest.requireActual('../api'), listUsers: jest.fn(), inviteUser: jest.fn(), editUser: jest.fn() }))
+jest.mock('../api', () => ({
+  ...jest.requireActual('../api'),
+  listUsers: jest.fn(),
+  inviteUser: jest.fn(),
+  reinviteUser: jest.fn(),
+  editUser: jest.fn(),
+}))
 
 const admin: Me = { signedIn: true, id: 1, email: 'admin@acme.test', isAdmin: true, hasPassword: true }
 
@@ -31,7 +37,7 @@ beforeEach(() => {
 })
 
 it('invites a user by mail', async () => {
-  jest.mocked(inviteUser).mockResolvedValue(user(3, 'new@acme.test', true))
+  jest.mocked(inviteUser).mockResolvedValue({ user: user(3, 'new@acme.test', true), link: null, mailProblem: null })
   renderAs(admin)
   await screen.findByText('rowan@acme.test')
 
@@ -42,6 +48,29 @@ it('invites a user by mail', async () => {
   expect(inviteUser).toHaveBeenCalledWith('new@acme.test', true)
   expect(await screen.findByText('Invited new@acme.test. The invite link works for 7 days.')).toBeInTheDocument()
   expect(screen.getByText('new@acme.test')).toBeInTheDocument()
+})
+
+it('gives the invite link to pass on when the instance has no mail', async () => {
+  jest.mocked(inviteUser).mockResolvedValue({ user: user(3, 'new@acme.test'), link: 'http://localhost:6165/sign-in/link#invite', mailProblem: null })
+  renderAs(admin)
+  await screen.findByText('rowan@acme.test')
+
+  await userEvent.type(screen.getByLabelText('Invite by email'), 'new@acme.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Invite' }))
+
+  expect(await screen.findByText('This instance has no mail set up, so pass this invite link on to new@acme.test.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Invite link')).toHaveValue('http://localhost:6165/sign-in/link#invite')
+})
+
+it('says why a new invite was not mailed, and gives its link', async () => {
+  jest.mocked(reinviteUser).mockResolvedValue({ link: 'http://localhost:6165/sign-in/link#again', mailProblem: 'Could not reach Postmark.' })
+  renderAs(admin)
+  const rowan = (await screen.findByText('rowan@acme.test')).closest('li')!
+
+  await userEvent.click(within(rowan).getByRole('button', { name: 'New invite' }))
+
+  expect(await screen.findByText('Nexus could not mail rowan@acme.test the invite: Could not reach Postmark.')).toBeInTheDocument()
+  expect(screen.getByLabelText('Invite link')).toHaveValue('http://localhost:6165/sign-in/link#again')
 })
 
 it('makes a member an admin, and offers no role change or removal for the admin asking', async () => {

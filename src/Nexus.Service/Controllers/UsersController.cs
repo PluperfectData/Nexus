@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nexus.Service.Auth;
 using Nexus.Service.Storage;
+using Pluperfect.Mail;
 
 namespace Nexus.Service.Controllers;
 
@@ -12,11 +13,21 @@ public sealed record InviteRequest(string? Email, bool IsAdmin);
 
 public sealed record UserEdit(bool IsAdmin);
 
-/// <summary>The instance's users, for admins: invite one by mail, make or unmake an admin, and remove one.</summary>
+/// <summary>
+/// An invite, mailed or not. <c>Link</c> is the invite link for the admin to pass on, given when it was not mailed:
+/// the instance has no mail set up, or <c>MailProblem</c> says why sending failed.
+/// </summary>
+public sealed record InviteView(UserView User, string? Link, string? MailProblem);
+
+/// <summary>A new invite link, given when it was not mailed, with the reason.</summary>
+public sealed record InviteLinkView(string? Link, string? MailProblem);
+
+/// <summary>The instance's users, for admins: invite one, make or unmake an admin, and remove one.</summary>
 [ApiController]
 [Route("users")]
 [Authorize(Policy = NexusClaims.AdminPolicy)]
-public sealed class UsersController(NexusDbContext db, LinkMail mail, Sessions sessions, TimeProvider time) : ControllerBase
+public sealed partial class UsersController(NexusDbContext db, LinkMail mail, Sessions sessions, Instance instance, TimeProvider time, ILogger<UsersController> logger)
+    : ControllerBase
 {
     [HttpGet]
     public async Task<IEnumerable<UserView>> List(CancellationToken ct)
@@ -26,9 +37,9 @@ public sealed class UsersController(NexusDbContext db, LinkMail mail, Sessions s
         return users.Select(user => View(user, members));
     }
 
-    /// <summary>Makes a user and mails them an invite link.</summary>
+    /// <summary>Makes a user and mails them an invite link, or answers the link when it cannot be mailed.</summary>
     [HttpPost]
-    public async Task<ActionResult<UserView>> Invite(InviteRequest request, CancellationToken ct)
+    public async Task<ActionResult<InviteView>> Invite(InviteRequest request, CancellationToken ct)
     {
         if (Emails.Normalize(request.Email) is not { } email)
         {
@@ -43,22 +54,46 @@ public sealed class UsersController(NexusDbContext db, LinkMail mail, Sessions s
         var user = new User { Email = email, IsAdmin = request.IsAdmin, LinkStamp = SignInLinks.NewStamp(), CreatedAt = time.GetUtcNow().UtcDateTime };
         db.Users.Add(user);
         await db.SaveChangesAsync(ct);
-        await mail.SendInviteAsync(user, ct);
-        return StatusCode(StatusCodes.Status201Created, View(user, []));
+        var (link, problem) = await DeliverAsync(user, ct);
+        return StatusCode(StatusCodes.Status201Created, new InviteView(View(user, []), link, problem));
     }
 
-    /// <summary>Mails the user a new invite link, for one who lost theirs.</summary>
+    /// <summary>Mails the user a new invite link, for one who lost theirs, or answers the link when it cannot be mailed.</summary>
     [HttpPost("{id:int}/invite")]
-    public async Task<IActionResult> Reinvite(int id, CancellationToken ct)
+    public async Task<ActionResult<InviteLinkView>> Reinvite(int id, CancellationToken ct)
     {
         if (await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct) is not { } user)
         {
             return NotFound();
         }
 
-        await mail.SendInviteAsync(user, ct);
-        return Accepted();
+        var (link, problem) = await DeliverAsync(user, ct);
+        return new InviteLinkView(link, problem);
     }
+
+    // Answers the link when it was not mailed, and why sending failed when it was tried.
+    private async Task<(string? Link, string? MailProblem)> DeliverAsync(User user, CancellationToken ct)
+    {
+        var link = mail.InviteFor(user);
+        if (!instance.MailReady)
+        {
+            return (link, null);
+        }
+
+        try
+        {
+            await mail.SendInviteAsync(user, link, ct);
+            return (null, null);
+        }
+        catch (MailDeliveryException ex)
+        {
+            LogUndelivered(logger, ex, user.Email);
+            return (link, ex.Message);
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not mail an invite to {Email}.")]
+    private static partial void LogUndelivered(ILogger logger, Exception ex, string email);
 
     [HttpPatch("{id:int}")]
     public async Task<ActionResult<UserView>> Edit(int id, UserEdit edit, CancellationToken ct)

@@ -45,7 +45,12 @@ export function Layout() {
 
   const nav = [
     { to: '/', label: 'Workspaces' },
-    ...(me?.isAdmin ? [{ to: '/users', label: 'Users' }] : []),
+    ...(me?.isAdmin
+      ? [
+          { to: '/users', label: 'Users' },
+          { to: '/settings', label: 'Settings' },
+        ]
+      : []),
   ]
 
   return (

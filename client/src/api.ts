@@ -88,6 +88,16 @@ export interface User {
   workspaces: number[]
 }
 
+/** An invite link to pass on, given when it was not mailed, with the reason mailing it failed when it was tried. */
+export interface InviteLink {
+  link: string | null
+  mailProblem: string | null
+}
+
+export interface Invite extends InviteLink {
+  user: User
+}
+
 /** Where an app's rows go. The key fields are what its push API said of the key at the last check. */
 export interface Destination {
   id: number
@@ -208,8 +218,8 @@ export const signOut = () => request<null>('/auth/sign-out', 'POST')
 export const setPassword = (password: string) => request<Me>('/auth/password', 'PUT', { password })
 
 export const listUsers = () => request<User[]>('/users')
-export const inviteUser = (email: string, isAdmin: boolean) => request<User>('/users', 'POST', { email, isAdmin })
-export const reinviteUser = (id: number) => request<null>(`/users/${id}/invite`, 'POST')
+export const inviteUser = (email: string, isAdmin: boolean) => request<Invite>('/users', 'POST', { email, isAdmin })
+export const reinviteUser = (id: number) => request<InviteLink>(`/users/${id}/invite`, 'POST')
 export const editUser = (id: number, isAdmin: boolean) => request<User>(`/users/${id}`, 'PATCH', { isAdmin })
 export const removeUser = (id: number) => request<null>(`/users/${id}`, 'DELETE')
 
@@ -285,8 +295,98 @@ export interface Pairing {
   expiresAt: string
 }
 
-export const getSetup = () => request<{ needed: boolean }>('/setup')
-export const setUp = (code: string, email: string, password: string) => request<Me>('/setup', 'POST', { code, email, password })
+export type InstallStage = 'Database' | 'Address' | 'Admin' | 'Done'
+
+/** A MySQL database's place, without its password. */
+export interface DatabasePlace {
+  host: string
+  port: number
+  name: string
+  user: string
+}
+
+export interface DatabaseForm extends DatabasePlace {
+  password: string
+}
+
+/**
+ * Where the instance stands. `local` says this page is on the machine Nexus runs on, which needs no install code;
+ * `allowed` says this page may use the installer, and only then is the database shown.
+ */
+export interface InstallView {
+  installed: boolean
+  stage: InstallStage
+  local: boolean
+  allowed: boolean
+  databaseConfigured: boolean
+  database: DatabasePlace | null
+  databaseProblem: string | null
+  clientOriginConfigured: boolean
+  /** Whether the instance mails links, so its sign-in page can offer one. */
+  mail: boolean
+}
+
+export type MailTransport = 'None' | 'Postmark' | 'Files'
+
+/** How the instance sends mail. A field set by the service's configuration cannot be changed here. */
+export interface MailSettings {
+  transport: MailTransport
+  tokenSet: boolean
+  tokenConfigured: boolean
+  from: string | null
+  fromConfigured: boolean
+  fromName: string
+  fromNameConfigured: boolean
+  /** The folder mail is written to instead of sent, when configuration names one. */
+  folder: string | null
+}
+
+export interface Settings {
+  clientOrigin: string | null
+  clientOriginConfigured: boolean
+  callbackOrigin: string | null
+  callbackOriginConfigured: boolean
+  callbackUrl: string | null
+  /** The service's own https address, to start the callback from. */
+  callbackSuggestion: string
+  mail: MailSettings
+  database: DatabasePlace | null
+  databaseConfigured: boolean
+}
+
+export interface TestMail {
+  sentTo: string
+  transport: MailTransport
+  folder: string | null
+}
+
+// The installer checks who calls it itself, so it takes no CSRF token. A page on another machine sends the install code.
+const installRequest = async <T>(code: string | null, path: string, method = 'GET', body?: unknown): Promise<T> =>
+  read<T>(
+    await fetch(`${apiUrl}${path}`, {
+      ...init(method, body, code ? { authorization: `Bearer nxi_${code}` } : {}),
+      credentials: 'include',
+    }),
+  )
+
+export const getInstall = (code: string | null = null) => installRequest<InstallView>(code, '/install')
+export const installDatabase = (code: string | null, database: DatabaseForm) =>
+  installRequest<InstallView>(code, '/install/database', 'POST', database)
+export const installAddress = (code: string | null, clientOrigin: string) =>
+  installRequest<InstallView>(code, '/install/address', 'POST', { clientOrigin })
+export const installAdmin = (code: string | null, email: string, password: string) =>
+  installRequest<Me>(code, '/install/admin', 'POST', { email, password })
+export const askForInstallCode = () => installRequest<null>(null, '/install/code', 'POST')
+
+export const getSettings = () => request<Settings>('/settings')
+export const saveAddresses = (clientOrigin: string, callbackOrigin: string) =>
+  request<Settings>('/settings/addresses', 'PUT', { clientOrigin, callbackOrigin })
+export const saveMail = (serverToken: string, from: string, fromName: string) =>
+  request<Settings>('/settings/mail', 'PUT', { serverToken, from, fromName })
+export const turnOffMail = () => request<Settings>('/settings/mail', 'DELETE')
+export const testMail = () => request<TestMail>('/settings/mail/test', 'POST')
+export const saveDatabase = (database: DatabaseForm) => request<Settings>('/settings/database', 'PUT', database)
+
 export const getPairing = (id: string) => request<Pairing>(`/pairings/${encodeURIComponent(id)}`)
 export const approvePairing = (id: string, workspaceId: number) =>
   request<{ returnUrl: string }>(`/pairings/${encodeURIComponent(id)}/approve`, 'POST', { workspaceId })

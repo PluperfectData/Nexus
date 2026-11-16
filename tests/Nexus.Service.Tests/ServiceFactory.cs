@@ -1,10 +1,12 @@
+using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc.Testing.Handlers;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -15,17 +17,53 @@ namespace Nexus.Service.Tests;
 
 /// <summary>
 /// Hosts the real service over a SQLite file in a temporary data directory, with a fake source and push API. It runs
-/// as Development, so cookies go over plain http, and mail lands as files in <see cref="MailDirectory"/>.
+/// as Development, so cookies go over plain http, and mail lands as files in <see cref="MailDirectory"/> unless the
+/// factory sends it to <see cref="Postmark"/>. An installed factory starts as the installer leaves an instance: a
+/// stored database, client address, and callback address, and an owner who is an admin.
 /// </summary>
 public sealed class ServiceFactory : WebApplicationFactory<Program>
 {
     public const string ClientOrigin = "http://localhost:6165";
 
-    public ServiceFactory()
+    public const string CallbackOrigin = "https://127.0.0.1:6164";
+
+    public const string OwnerEmail = "owner@nexus.test";
+
+    /// <summary>A request carrying this header reaches the service as one from this machine.</summary>
+    public const string LocalHeader = "X-Test-Local";
+
+    public static readonly DatabaseSettings StoredDatabase = new("db.nexus.test", 3306, "nexus", "nexus", "stored-password");
+
+    private static readonly string[] ConfiguredKeys =
+    [
+        "ConnectionStrings:Nexus",
+        "Jwt:SigningKey",
+        "Mail:ServerToken",
+        $"{ServiceSettings.Section}:{nameof(ServiceSettings.ClientOrigin)}",
+        $"{ServiceSettings.Section}:{nameof(ServiceSettings.CallbackOrigin)}",
+        $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFrom)}",
+        $"{ServiceSettings.Section}:{nameof(ServiceSettings.MailFromName)}",
+        $"{SchwabApp.Section}:{nameof(SchwabApp.CallbackUrl)}",
+    ];
+
+    private readonly bool _mailToFiles;
+
+    public ServiceFactory(bool installed = true, bool mailToFiles = true)
     {
+        _mailToFiles = mailToFiles;
         Directory.CreateDirectory(DataDirectory);
         using var db = NewContext();
         db.Database.EnsureCreated();
+        Database = new SqliteDatabaseHost(SqliteConnectionString);
+        if (installed)
+        {
+            var file = NewInstanceFile();
+            file.SaveDatabase(StoredDatabase);
+            file.SaveClientOrigin(ClientOrigin);
+            file.SaveCallbackOrigin(CallbackOrigin);
+            db.Users.Add(new User { Email = OwnerEmail, IsAdmin = true, LinkStamp = SignInLinks.NewStamp(), CreatedAt = DateTime.UtcNow });
+            db.SaveChanges();
+        }
     }
 
     public string DataDirectory { get; } = Path.Combine(Path.GetTempPath(), "nexus-service-tests", Guid.NewGuid().ToString("N"));
@@ -44,6 +82,11 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     internal FakeSchwab Schwab { get; } = new();
 
+    internal FakePostmark Postmark { get; } = new();
+
+    /// <summary>The database the service opens, whatever it is told to connect to.</summary>
+    internal SqliteDatabaseHost Database { get; }
+
     // Every context opens its own connection, since the worker runs beside the tests. Without pooling, no connection
     // holds the file open once its context is done, so the directory can be deleted.
     private string SqliteConnectionString => $"Data Source={Path.Combine(DataDirectory, "nexus.db")};Pooling=False";
@@ -52,8 +95,10 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     public NexusDbContext NewContext() => new(new DbContextOptionsBuilder<NexusDbContext>().UseSqlite(SqliteConnectionString).Options);
 
     /// <summary>The service's secrets, from the same keys, usable before the service starts.</summary>
-    public Secrets NewSecrets() =>
-        new(DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(DataDirectory, "keys")), builder => builder.SetApplicationName("Nexus")));
+    public Secrets NewSecrets() => new(NewProtection());
+
+    /// <summary>The service's stored settings, from the same file and keys, usable before the service starts.</summary>
+    public InstanceFile NewInstanceFile() => new(DataDirectory, NewProtection());
 
     /// <summary>Adds a user, with a password when one is given.</summary>
     public async Task<User> AddUserAsync(string email, string? password = null, bool admin = false)
@@ -70,10 +115,16 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         return user;
     }
 
+    public async Task<int> OwnerIdAsync()
+    {
+        await using var db = NewContext();
+        return await db.Users.Where(u => u.Email == OwnerEmail).Select(u => u.Id).SingleAsync();
+    }
+
     /// <summary>A browser with its own cookies, signed out.</summary>
     public Browser NewBrowser()
     {
-        var cookies = new System.Net.CookieContainer();
+        var cookies = new CookieContainer();
         var client = CreateDefaultClient(new Uri("http://localhost/"), new CookieContainerHandler(cookies));
         return new Browser(client, cookies);
     }
@@ -90,27 +141,34 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
-        builder.UseSetting("ConnectionStrings:Nexus", "Server=unused");
+
+        // Development reads this machine's user secrets, so each value an operator may configure is blanked here, and a
+        // test that wants one sets it.
+        foreach (var key in ConfiguredKeys)
+        {
+            builder.UseSetting(key, string.Empty);
+        }
+
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
-        builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.ClientOrigin)}", ClientOrigin);
-        builder.UseSetting("Mail:PickupDirectory", MailDirectory);
+        builder.UseSetting("Mail:PickupDirectory", _mailToFiles ? MailDirectory : string.Empty);
         builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppKey)}", "app-key");
         builder.UseSetting($"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}", "app-secret");
 
         builder.ConfigureLogging(logging => logging.AddProvider(Logs));
         builder.ConfigureTestServices(services =>
         {
-            services.RemoveAll<DbContextOptions<NexusDbContext>>();
-            services.RemoveAll<IDbContextOptionsConfiguration<NexusDbContext>>();
-            services.AddDbContext<NexusDbContext>(options => options.UseSqlite(SqliteConnectionString));
+            services.RemoveAll<IDatabaseHost>();
+            services.AddSingleton<IDatabaseHost>(Database);
             services.RemoveAll<SourceConnectors>();
             services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource(), new Nexus.Schwab.SchwabSource(new HttpClient(Schwab))]));
             services.AddHttpClient(OAuthApps.SchwabHttpClient).ConfigurePrimaryHttpMessageHandler(() => Schwab);
+            services.AddHttpClient(InstanceMailer.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Postmark);
             services.RemoveAll<HttpRetryOptions>();
             services.AddSingleton(new HttpRetryOptions { MaxAttempts = 1 });
             services.RemoveAll<RetryPolicy>();
             services.AddSingleton(new RetryPolicy([TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero]));
             services.AddHttpClient("push").ConfigurePrimaryHttpMessageHandler(() => Push);
+            services.AddSingleton<IStartupFilter, PretendLocal>();
         });
     }
 
@@ -121,5 +179,50 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         {
             Directory.Delete(DataDirectory, recursive: true);
         }
+    }
+
+    private IDataProtectionProvider NewProtection() =>
+        DataProtectionProvider.Create(new DirectoryInfo(Path.Combine(DataDirectory, "keys")), builder => builder.SetApplicationName("Nexus"));
+
+    // The test server gives no remote address, so a request reaches the service from this machine only when it asks to.
+    private sealed class PretendLocal : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((http, after) =>
+            {
+                if (http.Request.Headers.Remove(LocalHeader))
+                {
+                    http.Connection.RemoteIpAddress = IPAddress.Loopback;
+                }
+
+                return after(http);
+            });
+            next(app);
+        };
+    }
+}
+
+/// <summary>Opens the test's SQLite file whatever database the service is told to use, and refuses when told to.</summary>
+internal sealed class SqliteDatabaseHost(string connectionString) : IDatabaseHost
+{
+    /// <summary>Why the next databases are refused, in the words a server would use, or null to open them.</summary>
+    public string? Refusal { get; set; }
+
+    /// <summary>Each connection string the service asked to open.</summary>
+    public List<string> Prepared { get; } = [];
+
+    public void Configure(DbContextOptionsBuilder options, string given) => options.UseSqlite(connectionString);
+
+    public async Task PrepareAsync(string given, CancellationToken ct)
+    {
+        Prepared.Add(given);
+        if (Refusal is { } refusal)
+        {
+            throw new DatabaseException(refusal);
+        }
+
+        await using var db = new NexusDbContext(new DbContextOptionsBuilder<NexusDbContext>().UseSqlite(connectionString).Options);
+        await db.Database.EnsureCreatedAsync(ct);
     }
 }

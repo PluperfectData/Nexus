@@ -490,13 +490,12 @@ pages.
 There is no sign-up. An admin invites each user by mail, and makes and removes workspaces, their members,
 and apps. A member sees their own workspaces and changes their connections and syncs.
 
-The first admin comes from the setup page. When the service starts with no users, it writes a one-time setup
-code to its log, with the page's address, `/setup` on the client. The page takes the code, an email, and a
-password, and signs that admin in. A restart writes a new code until the instance has a user.
+The first admin comes from the installer, below.
 
 - A user signs in with a password, or with a link mailed to them that works once, for 15 minutes. An invite
-  link works once, for 7 days. Mail goes through `Pluperfect.Mail`: Postmark on a box, and `.eml` files in
-  `data/mail` on this machine.
+  link works once, for 7 days. Mail goes through `Pluperfect.Mail`'s Postmark transport, with the token set on the
+  Settings page; Development's configuration writes `.eml` files to `data/mail` instead. An instance without mail
+  offers no mailed links, and an invite answers its link for the admin to pass on.
 - The session is `Pluperfect.Jwt`'s: an access token in an `HttpOnly` cookie, a refresh token that rotates,
   and the origin and antiforgery checks on every unsafe request. Every route needs a session but `/health`
   and the sign-in routes under `/auth`.
@@ -507,10 +506,11 @@ password, and signs that admin in. A restart writes a new code until the instanc
 
 | Route | Does |
 |---|---|
-| `GET /setup`, `POST /setup` | Whether the instance needs setting up, and making its first admin with the setup code |
+| `GET /install`, `POST /install/database`, `POST /install/address`, `POST /install/admin`, `POST /install/code` | The installer, below |
+| `/settings`, `/settings/addresses`, `/settings/mail`, `POST /settings/mail/test`, `/settings/database` | Admins see and change the instance's addresses, mail, and database, and send a test mail |
 | `POST /auth/sign-in`, `POST /auth/link`, `POST /auth/link/redeem` | Signs in with a password, mails a link, or signs in with one |
 | `GET /auth/me`, `GET /auth/csrf`, `POST /auth/refresh`, `POST /auth/sign-out`, `PUT /auth/password` | The session and the signed-in user's password |
-| `/users` | Admins invite, change, and remove users |
+| `/users` | Admins invite, change, and remove users. An invite that is not mailed answers its link. |
 | `/workspaces`, `/workspaces/{id}/members/{userId}` | Workspaces and their members |
 | `/workspaces/{id}/apps`, `/apps/{id}`, `/apps/{id}/key`, `/apps/{id}/destinations`, `/destinations/{id}` | Apps, their keys, and their destinations. A key shows once, when it is made, and an app lists when its key was made. A destination is kept only once its key works, and records the push key's name and prefix. |
 | `POST /destinations/{id}/check` | Asks the push API whether it still takes the destination's key, and records the key's name and prefix, or why it was refused |
@@ -560,13 +560,8 @@ send one without a CORS preflight, which the service answers for its client's or
 
 ### Running it
 
-The service runs on `http://localhost:6163` and its client on `http://localhost:6165`. Set a MySQL 8.4
-connection string as a user secret. The service applies its migrations when it starts, and on a start with
-no users writes the setup code to its log.
-
-```bash
-dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project src/Nexus.Service
-```
+The service runs on `http://localhost:6163`, and on `https://127.0.0.1:6164` for sign-in callbacks. Its client runs
+on `http://localhost:6165`. Start both, then open `http://localhost:6165/install`.
 
 ```bash
 dotnet run --project src/Nexus.Service
@@ -584,10 +579,61 @@ The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` b
 the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pluperfect.Jwt/client` once with
 `npm run build` before installing the client.
 
-To sign in to Schwab, the service needs the Schwab app's key and secret as user secrets, and the app's
-callback, `https://127.0.0.1:6164/oauth/callback`, registered on the app as its own entry. The service serves
-that callback on `https://127.0.0.1:6164` beside `http://localhost:6163`; another address goes in
-`Nexus:Schwab:CallbackUrl`.
+### The installer
+
+An instance starts with nothing set. Until it has a database, a client address, and an admin, every route but
+`/install` and `/health` answers 503, and the client sends its visitors to `/install`. The installer asks, in turn:
+
+1. **The database:** a MySQL 8.4 server's host, port, database, user, and password. Nexus makes the database if it
+   is missing and the user may, applies its migrations, and keeps the settings only once that works. A database
+   that already has an admin skips step 3, which is how an existing instance is adopted.
+2. **The client's address:** where people open Nexus. CORS and the origin check allow it alone, and mailed links
+   and connect pages point there.
+3. **The first admin:** an email and a password, signed in at once.
+4. **Addresses and mail:** the https address providers send people back to after signing in, at
+   `/oauth/callback`, and Postmark's server token and sender, with a test mail. Mail may stay off.
+
+Admins change all of it later on the Settings page. A new database is opened and brought up to date before
+Nexus moves to it, and a database without an admin sends the instance back to step 3.
+
+A page on the machine the service runs on uses the installer as it is. Any other page needs the install code,
+which the service writes to its log, with a link to `/install` that carries it, at each start while it is not set
+up. The code is sent as `Authorization: Bearer nxi_...`, and five wrong codes lock the installer for 15 minutes. A
+page counts as on the machine when it reaches the service over loopback with no proxy's forwarding headers, at a
+loopback name, from a page at a loopback name; a box behind Caddy's Unix socket always needs the code.
+
+Someone locked out uses the installer's Make an admin, which makes an address an admin with a new password and
+signs it out everywhere else. On another machine it asks the service to write a code to its log, good for an hour.
+A database that stops opening at a start sends the instance back to step 1, with the stored settings filled in.
+
+The settings are kept in `data/instance.json`, with the database password, the Postmark token, and the session
+signing key encrypted by the Data Protection keys in `data/keys`. The service makes the signing key on its first
+start. On a box, `data/` must persist across releases.
+
+### Configuration
+
+Every setting the installer and the Settings page take can be set in configuration instead, for an operator or for
+debugging. A configured value wins over the stored one, and the pages show it without offering to change it.
+
+| Setting | Environment variable | Takes the place of |
+|---|---|---|
+| `ConnectionStrings:Nexus` | `ConnectionStrings__Nexus` | The database |
+| `Nexus:ClientOrigin` | `Nexus__ClientOrigin` | The client's address |
+| `Nexus:CallbackOrigin` | `Nexus__CallbackOrigin` | The address providers send people back to |
+| `Mail:ServerToken` | `Mail__ServerToken` | Postmark's server token |
+| `Nexus:MailFrom`, `Nexus:MailFromName` | `Nexus__MailFrom`, `Nexus__MailFromName` | The sender |
+| `Jwt:SigningKey` | `Jwt__SigningKey` | The session signing key the service makes, at least 32 bytes |
+| `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail: it is written to files there instead |
+
+For example, as a user secret:
+
+```bash
+dotnet user-secrets set ConnectionStrings:Nexus "Server=localhost;Database=nexus;User ID=...;Password=..." --project src/Nexus.Service
+```
+
+To sign in to Schwab, the service needs the Schwab app's key and secret, and the callback the Settings page shows,
+`https://127.0.0.1:6164/oauth/callback` on this machine, registered on the app as its own entry.
+`Nexus:Schwab:CallbackUrl` sets a different callback for Schwab alone.
 
 ```bash
 dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project src/Nexus.Service
@@ -597,15 +643,11 @@ dotnet user-secrets set Nexus:Schwab:AppKey "<app key>" --project src/Nexus.Serv
 dotnet user-secrets set Nexus:Schwab:AppSecret "<app secret>" --project src/Nexus.Service
 ```
 
-To make or restore an admin, such as when every admin is locked out, run the service with `add-admin`. It
-prints a link that signs them in once, within an hour, and exits.
+`add-admin` makes or restores an admin, prints a link that signs them in once, within an hour, and exits.
 
 ```bash
 dotnet run --project src/Nexus.Service -- add-admin you@example.com
 ```
-
-On a box, the service needs `Jwt__SigningKey`, at least 32 bytes, `Mail__ServerToken`, Postmark's server
-token, `Nexus__MailFrom`, an address on a domain Postmark may send as, and `Nexus__ClientOrigin`.
 
 ## Usage
 

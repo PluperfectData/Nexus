@@ -20,7 +20,7 @@ public sealed class SignInsController(
     OAuthApps apps,
     SignIns signIns,
     SourceConnectors connectors,
-    ServiceSettings settings,
+    Instance instance,
     TimeProvider time) : ControllerBase
 {
     private const string Lost = "This sign-in ran out of time, or did not start in Nexus. Start it again.";
@@ -129,7 +129,7 @@ public sealed class SignInsController(
         return Redirect($"{Client}/connect#{pending.SessionToken}");
     }
 
-    private string Client => settings.ClientOrigin.TrimEnd('/');
+    private string Client => instance.Client;
 
     private ActionResult<SignInPage> PageFor(PendingSignIn pending) =>
         new SignInPage(apps.SignInPage(pending.Connector, signIns.Start(pending)).ToString());

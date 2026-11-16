@@ -61,8 +61,9 @@ public sealed class AdminApiTests
 
         var invited = await admin.SendAsync<JsonElement>(HttpMethod.Post, "/users", new { email = "New@Acme.test", isAdmin = false });
 
-        invited.GetProperty("email").GetString().ShouldBe("new@acme.test");
-        invited.GetProperty("hasPassword").GetBoolean().ShouldBeFalse();
+        invited.GetProperty("user").GetProperty("email").GetString().ShouldBe("new@acme.test");
+        invited.GetProperty("user").GetProperty("hasPassword").GetBoolean().ShouldBeFalse();
+        invited.GetProperty("link").ValueKind.ShouldBe(JsonValueKind.Null);
         var mail = Browser.MailTo(_factory.MailDirectory, "new@acme.test").Single();
         mail.Subject.ShouldBe("You're invited to Nexus");
         using var newcomer = _factory.NewBrowser();
@@ -75,6 +76,7 @@ public sealed class AdminApiTests
     {
         using var admin = await _factory.SignedInAsync(Admin, admin: true);
         var id = (await admin.GetAsync<JsonElement>("/auth/me")).GetProperty("id").GetInt32();
+        (await admin.SendAsync(HttpMethod.Patch, $"/users/{await _factory.OwnerIdAsync()}", new { isAdmin = false })).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         (await admin.SendAsync(HttpMethod.Patch, $"/users/{id}", new { isAdmin = false })).StatusCode.ShouldBe(HttpStatusCode.Conflict);
         (await admin.SendAsync(HttpMethod.Delete, $"/users/{id}")).StatusCode.ShouldBe(HttpStatusCode.Conflict);

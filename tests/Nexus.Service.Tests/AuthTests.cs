@@ -158,7 +158,7 @@ public sealed class AuthTests
         string link;
         using (var scope = _factory.Services.CreateScope())
         {
-            link = await scope.ServiceProvider.GetRequiredService<Admins>().AddAsync(Rowan, CancellationToken.None);
+            link = (await scope.ServiceProvider.GetRequiredService<Admins>().AddAsync(Rowan, CancellationToken.None))!;
         }
 
         link.ShouldStartWith($"{ServiceFactory.ClientOrigin}/sign-in/link#");

@@ -17,7 +17,7 @@ public sealed record ConnectSessionView(string Url, DateTime ExpiresAt);
 [ApiController]
 [Route("connect-sessions")]
 [Authorize(Policy = AppKeyHandler.AppPolicy)]
-public sealed class ConnectSessionsController(NexusDbContext db, SourceConnectors connectors, ServiceSettings settings, TimeProvider time) : ControllerBase
+public sealed class ConnectSessionsController(NexusDbContext db, SourceConnectors connectors, Instance instance, TimeProvider time) : ControllerBase
 {
     [HttpPost]
     public async Task<ActionResult<ConnectSessionView>> Open(ConnectSessionRequest request, CancellationToken ct)
@@ -68,6 +68,6 @@ public sealed class ConnectSessionsController(NexusDbContext db, SourceConnector
         await db.SaveChangesAsync(ct);
         return StatusCode(
             StatusCodes.Status201Created,
-            new ConnectSessionView($"{settings.ClientOrigin.TrimEnd('/')}/connect#{token}", session.ExpiresAt));
+            new ConnectSessionView($"{instance.Client}/connect#{token}", session.ExpiresAt));
     }
 }

@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { type ReactNode, useState } from 'react'
 import userEvent from '@testing-library/user-event'
-import { ApiError, getSetup, mailLink, signIn, type Me } from '../api'
+import { ApiError, getInstall, type InstallView, mailLink, signIn, type Me } from '../api'
 import { rememberNext } from '../next'
 import { SessionContext, SIGNED_OUT } from '../session'
 import { SignInPage } from './SignInPage'
@@ -9,9 +9,21 @@ import { SignInPage } from './SignInPage'
 jest.mock('react-router', () => jest.requireActual('../../jest/router').reactRouterMock())
 const { navigate } = jest.requireActual('../../jest/router')
 
-jest.mock('../api', () => ({ ...jest.requireActual('../api'), signIn: jest.fn(), mailLink: jest.fn(), getSetup: jest.fn() }))
+jest.mock('../api', () => ({ ...jest.requireActual('../api'), signIn: jest.fn(), mailLink: jest.fn(), getInstall: jest.fn() }))
 
 const rowan: Me = { signedIn: true, id: 1, email: 'rowan@acme.test', isAdmin: false, hasPassword: true }
+
+const installed: InstallView = {
+  installed: true,
+  stage: 'Done',
+  local: false,
+  allowed: false,
+  databaseConfigured: false,
+  database: null,
+  databaseProblem: null,
+  clientOriginConfigured: false,
+  mail: true,
+}
 
 // A session that changes when the page sets it, as the app's does, so the page re-renders signed in.
 function Session({ onSet, children }: { onSet: (me: Me) => void; children: ReactNode }) {
@@ -35,17 +47,27 @@ function renderPage(setMe = jest.fn()) {
 beforeEach(() => {
   jest.clearAllMocks()
   localStorage.clear()
-  jest.mocked(getSetup).mockResolvedValue({ needed: false })
+  jest.mocked(getInstall).mockResolvedValue(installed)
 })
 
-it('sends the first visitor of an instance with no users to set it up', async () => {
-  jest.mocked(getSetup).mockResolvedValue({ needed: true })
+it('sends the first visitor of an instance not set up to the installer', async () => {
+  jest.mocked(getInstall).mockResolvedValue({ ...installed, installed: false, stage: 'Database' })
   renderPage()
 
   await screen.findByRole('heading', { name: 'Sign in to Nexus' })
   await new Promise((resolve) => setTimeout(resolve, 0))
 
-  expect(navigate).toHaveBeenCalledWith('/setup', { replace: true })
+  expect(navigate).toHaveBeenCalledWith('/install', { replace: true })
+})
+
+it('offers no mailed link on an instance without mail', async () => {
+  jest.mocked(getInstall).mockResolvedValue({ ...installed, mail: false })
+  renderPage()
+
+  await waitFor(() => expect(getInstall).toHaveBeenCalled())
+  await screen.findByLabelText('Password')
+
+  expect(screen.queryByRole('button', { name: 'Mail me a sign-in link instead' })).not.toBeInTheDocument()
 })
 
 it('goes back to the page that sent the visitor to sign in', async () => {
@@ -102,7 +124,7 @@ it('mails a link instead, and says one is on its way', async () => {
   jest.mocked(mailLink).mockResolvedValue(null)
   renderPage()
 
-  await userEvent.click(screen.getByRole('button', { name: 'Mail me a sign-in link instead' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Mail me a sign-in link instead' }))
   expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
   await userEvent.type(screen.getByLabelText('Email'), 'rowan@acme.test')
   await userEvent.click(screen.getByRole('button', { name: 'Mail me a link' }))

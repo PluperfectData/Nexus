@@ -1,10 +1,10 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router'
-import { getSetup, mailLink, signIn } from '../api'
+import { getInstall, mailLink, signIn } from '../api'
 import { peekNext } from '../next'
 import { useSession } from '../session'
 
-/** Signing in with a password, or asking for a link by mail. */
+/** Signing in with a password, or asking for a link by mail where the instance sends mail. */
 export function SignInPage() {
   const { me, setMe } = useSession()
   const navigate = useNavigate()
@@ -15,12 +15,15 @@ export function SignInPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mailed, setMailed] = useState(false)
+  // Offered once the instance says it sends mail.
+  const [mail, setMail] = useState(false)
 
-  // An instance with no users has no one to sign in, so its first visitor sets it up.
+  // An instance not set up has no one to sign in, so its first visitor sets it up.
   useEffect(() => {
-    getSetup()
-      .then((setup) => {
-        if (setup.needed) navigate('/setup', { replace: true })
+    getInstall()
+      .then((install) => {
+        if (!install.installed) navigate('/install', { replace: true })
+        setMail(install.mail)
       })
       .catch(() => {})
   }, [navigate])
@@ -83,9 +86,11 @@ export function SignInPage() {
             <button type="submit" disabled={busy}>
               {byLink ? 'Mail me a link' : 'Sign in'}
             </button>
-            <button type="button" className="link-button" onClick={() => setByLink(!byLink)}>
-              {byLink ? 'Sign in with a password' : 'Mail me a sign-in link instead'}
-            </button>
+            {mail && (
+              <button type="button" className="link-button" onClick={() => setByLink(!byLink)}>
+                {byLink ? 'Sign in with a password' : 'Mail me a sign-in link instead'}
+              </button>
+            )}
           </div>
         </form>
       )}

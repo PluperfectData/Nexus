@@ -34,7 +34,7 @@ public sealed record PairingClaimed(string AppKey, int DestinationId, string App
 /// </summary>
 [ApiController]
 [Route("pairings")]
-public sealed class PairingsController(NexusDbContext db, PushDestination push, Secrets secrets, ServiceSettings settings, TimeProvider time)
+public sealed class PairingsController(NexusDbContext db, PushDestination push, Secrets secrets, Instance instance, TimeProvider time)
     : ControllerBase
 {
     private const string Gone = "This pairing has expired or is finished. Start again from the app.";
@@ -78,7 +78,7 @@ public sealed class PairingsController(NexusDbContext db, PushDestination push, 
         await db.SaveChangesAsync(ct);
         return StatusCode(
             StatusCodes.Status201Created,
-            new PairingOpened(pairing.PublicId, $"{settings.ClientOrigin.TrimEnd('/')}/pair?id={pairing.PublicId}", pairing.ExpiresAt));
+            new PairingOpened(pairing.PublicId, $"{instance.Client}/pair?id={pairing.PublicId}", pairing.ExpiresAt));
     }
 
     [HttpGet("{id}")]

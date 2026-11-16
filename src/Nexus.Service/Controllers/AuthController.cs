@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Nexus.Service.Auth;
 using Nexus.Service.Storage;
+using Pluperfect.Mail;
 
 namespace Nexus.Service.Controllers;
 
@@ -21,13 +22,15 @@ public sealed record MeView(bool SignedIn, int? Id, string? Email, bool IsAdmin,
 /// <summary>Signing in with a password or a mailed link, refreshing the session, signing out, and setting a password.</summary>
 [ApiController]
 [Route("auth")]
-public sealed class AuthController(
+public sealed partial class AuthController(
     NexusDbContext db,
     Sessions sessions,
     SignInLinks links,
     LinkMail mail,
+    Instance instance,
     SignInThrottle throttle,
-    IAntiforgery antiforgery) : ControllerBase
+    IAntiforgery antiforgery,
+    ILogger<AuthController> logger) : ControllerBase
 {
     private const string Refused = "That email and password do not match.";
 
@@ -94,9 +97,22 @@ public sealed class AuthController(
             return Problem("Enter an email address.", statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (!instance.MailReady)
+        {
+            return Problem("This instance has no mail set up, so it cannot mail links. Sign in with your password.", statusCode: StatusCodes.Status409Conflict);
+        }
+
         if (throttle.MayMailLink(email) && await db.Users.FirstOrDefaultAsync(u => u.Email == email, ct) is { } user)
         {
-            await mail.SendSignInAsync(user, ct);
+            // Answered the same either way, so the answer never says whether the address has an account.
+            try
+            {
+                await mail.SendSignInAsync(user, ct);
+            }
+            catch (MailDeliveryException ex)
+            {
+                LogUndelivered(logger, ex, email);
+            }
         }
 
         return Accepted();
@@ -150,6 +166,9 @@ public sealed class AuthController(
     }
 
     private static MeView View(User user) => new(true, user.Id, user.Email, user.IsAdmin, user.PasswordHash is not null);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not mail a sign-in link to {Email}.")]
+    private static partial void LogUndelivered(ILogger logger, Exception ex, string email);
 
     private string CsrfToken() => antiforgery.GetAndStoreTokens(HttpContext).RequestToken!;
 }

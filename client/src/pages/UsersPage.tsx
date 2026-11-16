@@ -1,13 +1,21 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { editUser, inviteUser, listUsers, reinviteUser, removeUser, type User } from '../api'
+import { editUser, type InviteLink, inviteUser, listUsers, reinviteUser, removeUser, type User } from '../api'
+import { CopyValue } from '../components/InstanceForms'
 import { useSession } from '../session'
 
-/** The instance's users, for admins: invite one by mail, make or unmake an admin, mail a new invite, and remove one. */
+/** An invite link the instance did not mail, for the admin to pass on, with why. */
+interface PassOn extends InviteLink {
+  email: string
+  link: string
+}
+
+/** The instance's users, for admins: invite one, make or unmake an admin, send a new invite, and remove one. */
 export function UsersPage() {
   const { me } = useSession()
   const [users, setUsers] = useState<User[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [passOn, setPassOn] = useState<PassOn | null>(null)
   const [email, setEmail] = useState('')
   const [admin, setAdmin] = useState(false)
 
@@ -23,6 +31,7 @@ export function UsersPage() {
   async function act(action: () => Promise<void>) {
     setError(null)
     setNotice(null)
+    setPassOn(null)
     try {
       await action()
     } catch (e) {
@@ -35,9 +44,11 @@ export function UsersPage() {
   function invite(event: FormEvent) {
     event.preventDefault()
     void act(async () => {
-      const made = await inviteUser(email.trim(), admin)
+      const invite = await inviteUser(email.trim(), admin)
+      const made = invite.user
       setUsers((current) => [...(current ?? []), made].sort((a, b) => a.email.localeCompare(b.email)))
-      setNotice(`Invited ${made.email}. The invite link works for 7 days.`)
+      if (invite.link) setPassOn({ ...invite, email: made.email, link: invite.link })
+      else setNotice(`Invited ${made.email}. The invite link works for 7 days.`)
       setEmail('')
       setAdmin(false)
     })
@@ -48,6 +59,16 @@ export function UsersPage() {
       <h1>Users</h1>
       {error && <p className="error">{error}</p>}
       {notice && <p className="success">{notice}</p>}
+      {passOn && (
+        <div className="panel">
+          <p className={passOn.mailProblem ? 'error' : undefined}>
+            {passOn.mailProblem
+              ? `Nexus could not mail ${passOn.email} the invite: ${passOn.mailProblem}`
+              : `This instance has no mail set up, so pass this invite link on to ${passOn.email}.`}
+          </p>
+          <CopyValue label="Invite link" value={passOn.link} note="It signs them in once, within 7 days." />
+        </div>
+      )}
 
       {users === null ? (
         <p className="muted">Loading…</p>
@@ -73,12 +94,13 @@ export function UsersPage() {
                   className="secondary"
                   onClick={() =>
                     act(async () => {
-                      await reinviteUser(user.id)
-                      setNotice(`Mailed ${user.email} a new invite link.`)
+                      const invite = await reinviteUser(user.id)
+                      if (invite.link) setPassOn({ ...invite, email: user.email, link: invite.link })
+                      else setNotice(`Mailed ${user.email} a new invite link.`)
                     })
                   }
                 >
-                  Mail a new invite
+                  New invite
                 </button>
                 {user.id !== me.id && (
                   <button
