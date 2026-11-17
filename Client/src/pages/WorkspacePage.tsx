@@ -28,6 +28,7 @@ import { SignInAppsSection } from '../components/SignInAppsSection'
 import { leaveFor } from '../browser'
 import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
+import { rememberWorkspace, useWorkspaces } from '../workspace'
 
 // How often the page asks again while a sync is queued or running.
 const POLL_MS = 2000
@@ -38,6 +39,7 @@ const busy = (syncs: Sync[]) => syncs.some((s) => s.status === 'Queued' || s.sta
 export function WorkspacePage() {
   const id = Number(useParams().id)
   const { me } = useSession()
+  const { refresh } = useWorkspaces()
   const navigate = useNavigate()
   const [workspace, setWorkspace] = useState<WorkspaceDetail | null>(null)
   const [connectors, setConnectors] = useState<Connector[]>([])
@@ -55,6 +57,7 @@ export function WorkspacePage() {
   useEffect(() => {
     Promise.all([getWorkspace(id), listConnectors(), listConnections(id), listApps(id), listSyncs(id), listSignInApps(id)])
       .then(([found, connectorList, connectionList, appList, syncList, signInAppList]) => {
+        rememberWorkspace(found.id)
         setWorkspace(found)
         setConnectors(connectorList)
         setConnections(connectionList)
@@ -91,7 +94,7 @@ export function WorkspacePage() {
   return (
     <div className="page">
       <p>
-        <Link to="/">Workspaces</Link>
+        <Link to="/workspaces">Workspaces</Link>
       </p>
       <div className="section-head">
         <h1>{workspace.name}</h1>
@@ -103,7 +106,8 @@ export function WorkspacePage() {
               window.confirm(`Remove ${workspace.name} with its apps, connections, and syncs? The tables they filled stay.`) &&
               act(async () => {
                 await removeWorkspace(workspace.id)
-                navigate('/')
+                refresh()
+                navigate('/workspaces')
               })
             }
           >

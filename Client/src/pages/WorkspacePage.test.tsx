@@ -19,6 +19,7 @@ import {
   listUsers,
   makeApp,
   type Me,
+  removeWorkspace,
   renewSignIn,
   replaceConnectionFile,
   runSync,
@@ -29,10 +30,11 @@ import {
 } from '../api'
 import { leaveFor } from '../browser'
 import { SessionContext } from '../session'
+import { WorkspacesContext } from '../workspace'
 import { WorkspacePage } from './WorkspacePage'
 
 jest.mock('react-router', () => jest.requireActual('../../jest/router').reactRouterMock())
-const { routerState } = jest.requireActual('../../jest/router')
+const { navigate, routerState } = jest.requireActual('../../jest/router')
 
 jest.mock('../api', () => ({
   ...jest.requireActual('../api'),
@@ -55,6 +57,7 @@ jest.mock('../api', () => ({
   replaceConnectionFile: jest.fn(),
   startSignIn: jest.fn(),
   renewSignIn: jest.fn(),
+  removeWorkspace: jest.fn(),
 }))
 
 jest.mock('../browser', () => ({ leaveFor: jest.fn() }))
@@ -127,10 +130,14 @@ const orphaned: Sync = {
   lastRun: { ...orders.lastRun!, status: 'Failed', rows: 0, errorKind: 'ConfigInvalid', error: NO_DESTINATION },
 }
 
+const refreshWorkspaces = jest.fn()
+
 function renderAs(me: Me) {
   render(
     <SessionContext.Provider value={{ me, setMe: jest.fn() }}>
-      <WorkspacePage />
+      <WorkspacesContext.Provider value={{ workspaces: null, error: null, refresh: refreshWorkspaces }}>
+        <WorkspacePage />
+      </WorkspacesContext.Provider>
     </SessionContext.Provider>,
   )
 }
@@ -139,6 +146,7 @@ const rowOf = async (table: string) => (await screen.findByText(table, { selecto
 
 beforeEach(() => {
   jest.clearAllMocks()
+  localStorage.clear()
   routerState.params = { id: '4' }
   jest.mocked(getWorkspace).mockResolvedValue({ id: 4, name: 'Acme', createdAt: '2026-11-15T12:00:00Z', members: [] })
   jest.mocked(listConnectors).mockResolvedValue([
@@ -480,4 +488,25 @@ it('signs a connection in again once its provider ends its sign-in, and shows wh
 
   expect(renewSignIn).toHaveBeenCalledWith(9)
   expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=def')
+})
+
+it('remembers the workspace for the next visit to /, and links back to the Workspaces page', async () => {
+  renderAs(member)
+
+  await screen.findByRole('heading', { level: 1, name: 'Acme' })
+
+  expect(localStorage.getItem('nexus-workspace')).toBe('4')
+  expect(screen.getByRole('link', { name: 'Workspaces' })).toHaveAttribute('href', '/workspaces')
+})
+
+it("removes the workspace, tells the header's menu, and goes to the Workspaces page", async () => {
+  jest.spyOn(window, 'confirm').mockReturnValue(true)
+  jest.mocked(removeWorkspace).mockResolvedValue(null)
+  renderAs({ ...member, isAdmin: true })
+
+  await userEvent.click(await screen.findByRole('button', { name: 'Remove workspace' }))
+
+  expect(removeWorkspace).toHaveBeenCalledWith(4)
+  expect(refreshWorkspaces).toHaveBeenCalled()
+  expect(navigate).toHaveBeenCalledWith('/workspaces')
 })

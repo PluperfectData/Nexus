@@ -3,10 +3,12 @@ import { Link } from 'react-router'
 import { listWorkspaces, makeWorkspace, type Workspace } from '../api'
 import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
+import { useWorkspaces } from '../workspace'
 
 /** The workspaces the user may see, and for an admin, a form to make one. */
 export function WorkspacesPage() {
   const { me } = useSession()
+  const { refresh } = useWorkspaces()
   const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null)
   // A sign-in the service lost track of comes back here with its reason.
   const [error, setError] = useState<string | null>(() => arrivalQuery().get('error'))
@@ -26,6 +28,7 @@ export function WorkspacesPage() {
       const made = await makeWorkspace(name.trim())
       setWorkspaces((current) => [...(current ?? []), made].sort((a, b) => a.name.localeCompare(b.name)))
       setName('')
+      refresh()
     } catch (e) {
       setError((e as Error).message)
     }

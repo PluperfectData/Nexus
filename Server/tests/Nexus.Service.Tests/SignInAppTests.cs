@@ -122,7 +122,7 @@ public sealed class SignInAppTests
         await using var db = _factory.NewContext();
         var connection = await db.Connections.SingleAsync();
         back.Headers.Location!.OriginalString.ShouldBe($"{ServiceFactory.ClientOrigin}/workspaces/{workspace}?signedIn={connection.Id}");
-        again.Headers.Location!.OriginalString.ShouldStartWith($"{ServiceFactory.ClientOrigin}/?error=");
+        again.Headers.Location!.OriginalString.ShouldStartWith($"{ServiceFactory.ClientOrigin}/workspaces?error=");
         (await db.PendingSignIns.CountAsync()).ShouldBe(0);
     }
 

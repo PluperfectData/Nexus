@@ -466,7 +466,8 @@ pages.
   (`POST /connect/sign-in` with `{name, settings}`), or to renew a connection (`POST /connections/{id}/sign-in`),
   and each answers the provider's sign-in page. The provider sends the browser back to `GET /oauth/callback`,
   which keeps the tokens, encrypted, and sends it on: to the connect page to pick streams, to the workspace page
-  with `?signedIn=`, or with `?error=` and the reason. Schwab's setting that allows orders is never offered,
+  with `?signedIn=`, or with `?error=` and the reason. A sign-in the service no longer holds goes to the Workspaces
+  page, with its `error`. Schwab's setting that allows orders is never offered,
   since the service only reads.
 - Each workspace signs in through its own app at the provider, such as its Schwab app, which its members set under
   Sign-in apps on the workspace page, beside the callback to register on it. The app's secret is encrypted and
@@ -495,6 +496,11 @@ pages.
 
 There is no sign-up. An admin invites each user by mail, and makes and removes workspaces, their members,
 and apps. A member sees their own workspaces and changes their connections and syncs.
+
+The client's `/` opens the workspace last opened in the browser, or the first by name, and the Workspaces page, at
+`/workspaces`, when there is none. The header's workspace menu names the workspace and switches between them, with
+Manage workspaces for admins. Admins reach Users, Workspaces, and Settings from the account menu, and the header's row
+holds the Log, which moves behind the hamburger below 30rem.
 
 The first admin comes from the installer, below.
 

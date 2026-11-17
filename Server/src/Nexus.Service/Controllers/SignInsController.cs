@@ -67,7 +67,7 @@ public sealed class SignInsController(
     {
         if (await signIns.TakeAsync(state, ct) is not { } pending)
         {
-            return Redirect($"{Client}/?error={Uri.EscapeDataString(Lost)}");
+            return Redirect($"{Client}/workspaces?error={Uri.EscapeDataString(Lost)}");
         }
 
         var now = time.GetUtcNow().UtcDateTime;

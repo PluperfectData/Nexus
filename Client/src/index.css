@@ -118,6 +118,15 @@ p {
   padding: 0.75rem var(--gutter);
 }
 
+/* The brand and the workspace switcher hold the row's left, and the switcher's name gives up room first. */
+.header-start {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  margin-right: auto;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -126,7 +135,51 @@ p {
   font-size: 1.2rem;
   color: var(--header-text);
   text-decoration: none;
-  margin-right: auto;
+}
+
+.workspace-switch {
+  position: relative;
+  min-width: 0;
+}
+
+.workspace-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: min(12rem, 100%);
+  min-height: 2.5rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.75rem;
+  border: 1px solid var(--header-control);
+  border-radius: 0.4rem;
+  background: none;
+  color: var(--header-text);
+  font: inherit;
+}
+
+.workspace-button svg {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+}
+
+.workspace-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-menu {
+  left: 0;
+  right: auto;
+}
+
+.workspace-menu a[aria-current] {
+  font-weight: 600;
+}
+
+.account-menu .menu-foot {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
 }
 
 .brand-mark {
@@ -176,8 +229,17 @@ p {
   display: none;
 }
 
-/* An admin's four links, the brand, and the header's buttons run out of room near 33rem. */
-@media (max-width: 36rem) {
+/* On a phone the Log moves behind the hamburger, and the brand keeps its mark, with its name for screen readers. */
+@media (max-width: 30rem) {
+  .brand-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
   .nav-toggle {
     display: inline-flex;
   }

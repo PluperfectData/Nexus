@@ -93,7 +93,7 @@ public sealed class SignInTests
         using var bare = await _admin.SendAsync(HttpMethod.Post, $"/workspaces/{workspace}/sign-ins", new { name = "Brokerage", connector = "schwab" });
 
         ErrorOf(lost).ShouldBe("This sign-in ran out of time, or did not start in Nexus. Start it again.");
-        lost.Headers.Location!.OriginalString.ShouldStartWith($"{ServiceFactory.ClientOrigin}/?error=");
+        lost.Headers.Location!.OriginalString.ShouldStartWith($"{ServiceFactory.ClientOrigin}/workspaces?error=");
         ErrorOf(declined).ShouldBe("Charles Schwab did not sign you in: access_denied.");
         ErrorOf(refused).ShouldBe("Schwab refused the sign-in (400): Bad code.");
         refused.Headers.Location!.OriginalString.ShouldStartWith($"{ServiceFactory.ClientOrigin}/workspaces/{workspace}?error=");

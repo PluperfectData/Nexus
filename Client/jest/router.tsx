@@ -15,13 +15,15 @@ type LinkProps = {
   className?: string | ((state: { isActive: boolean }) => string)
   role?: string
   'aria-label'?: string
+  'aria-current'?: 'page'
 }
 
-const link = ({ to, children, className, role, 'aria-label': label }: LinkProps) => (
+const link = ({ to, children, className, role, 'aria-label': label, 'aria-current': current }: LinkProps) => (
   <a
     href={to}
     role={role}
     aria-label={label}
+    aria-current={current}
     className={typeof className === 'function' ? className({ isActive: routerState.pathname === to }) : className}
   >
     {children}
@@ -38,6 +40,15 @@ export const reactRouterMock = () => ({
   },
   useNavigate: () => navigate,
   useParams: () => routerState.params,
+  useMatch: (pattern: string) => {
+    const names: string[] = []
+    const source = pattern.replace(/\/\*$/, '(?:/.*)?').replace(/:(\w+)/g, (_: string, name: string) => {
+      names.push(name)
+      return '([^/]+)'
+    })
+    const found = new RegExp(`^${source}$`).exec(routerState.pathname)
+    return found ? { params: Object.fromEntries(names.map((name, i) => [name, found[i + 1]])) } : null
+  },
   useLocation: () => ({ pathname: routerState.pathname, hash: '', state: null }),
   useSearchParams: () => [routerState.search, setSearchParams],
 })

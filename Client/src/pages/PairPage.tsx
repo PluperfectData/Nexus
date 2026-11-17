@@ -61,7 +61,7 @@ export function PairPage() {
       </p>
       {workspaces.length === 0 ? (
         <p>
-          There is no workspace to link it to yet. <Link to="/">Make one</Link>, then open this page again.
+          There is no workspace to link it to yet. <Link to="/workspaces">Make one</Link>, then open this page again.
         </p>
       ) : (
         <form

@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { Navigate, NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router'
 import { signOut } from '../api'
 import { clearNext, rememberNext } from '../next'
 import { SIGNED_OUT, useSession } from '../session'
 import { useTheme } from '../theme'
+import { currentOf, useWorkspaces } from '../workspace'
 import { AccountMenu } from './AccountMenu'
 import { BrandMark } from './BrandMark'
+import { WorkspaceMenu } from './WorkspaceMenu'
+
+// The admins' pages are in the account menu, so the row holds the Log alone.
+const NAV = [{ to: '/log', label: 'Log' }]
 
 /** Shows the theme a press switches to: a sun for light, a moon for dark. */
 function ThemeToggle() {
@@ -33,6 +38,9 @@ export function Layout() {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const { me, setMe } = useSession()
+  const { workspaces } = useWorkspaces()
+  const inPage = useMatch('/workspaces/:id')?.params.id
+  const current = currentOf(workspaces, inPage === undefined ? null : Number(inPage))
 
   // Navigating with the menu open leaves it covering the page it just went to.
   useEffect(() => setMenuOpen(false), [pathname])
@@ -43,17 +51,6 @@ export function Layout() {
     navigate('/sign-in')
   }
 
-  const nav = [
-    { to: '/', label: 'Workspaces' },
-    ...(me?.isAdmin
-      ? [
-          { to: '/users', label: 'Users' },
-          { to: '/settings', label: 'Settings' },
-        ]
-      : []),
-    { to: '/log', label: 'Log' },
-  ]
-
   return (
     <>
       <a className="skip" href="#main">
@@ -62,14 +59,19 @@ export function Layout() {
 
       <header className="site-header">
         <div className="wrap">
-          <NavLink to="/" className="brand">
-            <BrandMark />
-            Nexus
-          </NavLink>
+          <div className="header-start">
+            <NavLink to="/" className="brand">
+              <BrandMark />
+              <span className="brand-name">Nexus</span>
+            </NavLink>
+            {me?.signedIn && current && workspaces && (
+              <WorkspaceMenu key={pathname} current={current} workspaces={workspaces} isAdmin={me.isAdmin} />
+            )}
+          </div>
 
           {me?.signedIn && (
             <nav className="nav" id="site-nav" aria-label="Main" data-open={menuOpen ? '' : undefined}>
-              {nav.map((item) => (
+              {NAV.map((item) => (
                 <NavLink key={item.to} to={item.to} end className={({ isActive }) => (isActive ? 'is-active' : '')}>
                   {item.label}
                 </NavLink>

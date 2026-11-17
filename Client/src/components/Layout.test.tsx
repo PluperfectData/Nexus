@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Me } from '../api'
+import type { Me, Workspace } from '../api'
 import { peekNext, rememberNext } from '../next'
 import { SessionContext, SIGNED_OUT } from '../session'
+import { WorkspacesContext } from '../workspace'
 import { Layout, RequireSession } from './Layout'
 
 jest.mock('react-router', () => jest.requireActual('../../jest/router').reactRouterMock())
@@ -12,24 +13,74 @@ jest.mock('../api', () => ({ ...jest.requireActual('../api'), signOut: jest.fn()
 
 const member: Me = { signedIn: true, id: 2, email: 'member@acme.test', isAdmin: false, hasPassword: true }
 
-const renderWith = (me: Me | null, element = <Layout />, setMe = jest.fn()) =>
-  render(<SessionContext.Provider value={{ me, setMe }}>{element}</SessionContext.Provider>)
+const workspace = (id: number, name: string): Workspace => ({ id, name, createdAt: '2026-11-16T00:00:00Z' })
 
-beforeEach(() => jest.clearAllMocks())
+const theirs = [workspace(1, 'Acme'), workspace(2, 'Finance')]
 
-it('shows Users and Settings in the nav to an admin only, Log to everyone, and keeps the account out of the nav', () => {
+const renderWith = (me: Me | null, element = <Layout />, setMe = jest.fn(), workspaces: Workspace[] = theirs) =>
+  render(
+    <SessionContext.Provider value={{ me, setMe }}>
+      <WorkspacesContext.Provider value={{ workspaces, error: null, refresh: jest.fn() }}>{element}</WorkspacesContext.Provider>
+    </SessionContext.Provider>,
+  )
+
+beforeEach(() => {
+  jest.clearAllMocks()
+  localStorage.clear()
+  routerState.pathname = '/'
+})
+
+it("keeps the Log alone in the nav, for everyone, and puts an admin's pages in the account menu", async () => {
   const { unmount } = renderWith(member)
   const nav = screen.getByRole('navigation', { name: 'Main' })
-  expect(within(nav).queryByRole('link', { name: 'Users' })).not.toBeInTheDocument()
-  expect(within(nav).queryByRole('link', { name: 'Settings' })).not.toBeInTheDocument()
-  expect(within(nav).queryByRole('link', { name: 'Account' })).not.toBeInTheDocument()
-  expect(within(nav).getByRole('link', { name: 'Log' })).toHaveAttribute('href', '/log')
+  expect(within(nav).getAllByRole('link').map((link) => `${link.textContent} ${link.getAttribute('href')}`)).toEqual(['Log /log'])
+  await userEvent.click(screen.getByRole('button', { name: /Account menu/ }))
+  expect(within(screen.getByRole('menu', { name: 'Account' })).queryByRole('menuitem', { name: 'Users' })).not.toBeInTheDocument()
   unmount()
 
   renderWith({ ...member, isAdmin: true })
-  const adminNav = screen.getByRole('navigation', { name: 'Main' })
-  expect(within(adminNav).getAllByRole('link').map((link) => link.textContent)).toEqual(['Workspaces', 'Users', 'Settings', 'Log'])
-  expect(within(adminNav).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+  expect(within(screen.getByRole('navigation', { name: 'Main' })).getAllByRole('link').map((link) => link.textContent)).toEqual(['Log'])
+  await userEvent.click(screen.getByRole('button', { name: /Account menu/ }))
+  const menu = screen.getByRole('menu', { name: 'Account' })
+  expect(within(menu).getByRole('menuitem', { name: 'Users' })).toHaveAttribute('href', '/users')
+  expect(within(menu).getByRole('menuitem', { name: 'Workspaces' })).toHaveAttribute('href', '/workspaces')
+  expect(within(menu).getByRole('menuitem', { name: 'Settings' })).toHaveAttribute('href', '/settings')
+})
+
+describe('the workspace menu', () => {
+  it("names the workspace whose page is open, and switches to another", async () => {
+    routerState.pathname = '/workspaces/2'
+    renderWith(member)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Workspace: Finance' }))
+    const menu = screen.getByRole('menu', { name: 'Workspaces' })
+
+    expect(within(menu).getByRole('menuitem', { name: 'Finance' })).toHaveAttribute('aria-current', 'page')
+    expect(within(menu).getByRole('menuitem', { name: 'Acme' })).toHaveAttribute('href', '/workspaces/1')
+    expect(within(menu).queryByRole('menuitem', { name: 'Manage workspaces' })).not.toBeInTheDocument()
+  })
+
+  it('names the workspace last opened on a page outside any, such as the Log', () => {
+    localStorage.setItem('nexus-workspace', '2')
+    routerState.pathname = '/log'
+    renderWith(member)
+
+    expect(screen.getByRole('button', { name: 'Workspace: Finance' })).toBeInTheDocument()
+  })
+
+  it('offers an admin a way to manage the workspaces', async () => {
+    renderWith({ ...member, isAdmin: true })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Workspace: Acme' }))
+
+    expect(within(screen.getByRole('menu', { name: 'Workspaces' })).getByRole('menuitem', { name: 'Manage workspaces' })).toHaveAttribute('href', '/workspaces')
+  })
+
+  it('is left out for someone in no workspace', () => {
+    renderWith(member, <Layout />, jest.fn(), [])
+
+    expect(screen.queryByRole('button', { name: /^Workspace:/ })).not.toBeInTheDocument()
+  })
 })
 
 it('opens the nav from the menu button, which says what a press does', async () => {

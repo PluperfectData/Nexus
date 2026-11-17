@@ -3,8 +3,8 @@ import { Link } from 'react-router'
 import type { Me } from '../api'
 
 /**
- * The signed-in user's menu, at the header's far right: who they are, their account page, and signing out. The header
- * keys it on the path, so a navigation remounts it closed.
+ * The signed-in user's menu, at the header's far right: who they are, their account page, an admin's Users,
+ * Workspaces, and Settings pages, and signing out. The header keys it on the path, so a navigation remounts it closed.
  */
 export function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const [open, setOpen] = useState(false)
@@ -56,6 +56,19 @@ export function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }
           <Link to="/account" role="menuitem">
             Account
           </Link>
+          {me.isAdmin && (
+            <>
+              <Link to="/users" role="menuitem">
+                Users
+              </Link>
+              <Link to="/workspaces" role="menuitem">
+                Workspaces
+              </Link>
+              <Link to="/settings" role="menuitem">
+                Settings
+              </Link>
+            </>
+          )}
           <button type="button" role="menuitem" onClick={onSignOut}>
             Sign out
           </button>
