@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using NUnit.Framework;
 using Shouldly;
 
@@ -111,5 +113,39 @@ public sealed class SettingsTests
         request.Headers.Add("Access-Control-Request-Method", "POST");
         using var response = await client.SendAsync(request);
         return response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values) ? values.Single() : null;
+    }
+
+    [Test]
+    public async Task A_saved_Postmark_token_wins_over_mail_files_and_turning_it_off_returns_to_them()
+    {
+        using var factory = new ServiceFactory();
+        using var admin = await factory.SignedInAsync(Admin, admin: true);
+
+        var files = await admin.GetAsync<JsonElement>("/settings");
+        var postmark = await admin.SendAsync<JsonElement>(HttpMethod.Put, "/settings/mail", new { serverToken = FakePostmark.Token, from = "nexus@acme.test" });
+        (await admin.SendAsync(HttpMethod.Post, "/settings/mail/test")).EnsureSuccessStatusCode();
+        var back = await admin.SendAsync<JsonElement>(HttpMethod.Delete, "/settings/mail");
+
+        files.GetProperty("mail").GetProperty("transport").GetString().ShouldBe("Files");
+        files.GetProperty("mail").GetProperty("folder").GetString().ShouldBe(Path.GetFullPath(factory.MailDirectory));
+        postmark.GetProperty("mail").GetProperty("transport").GetString().ShouldBe("Postmark");
+        postmark.GetProperty("mail").GetProperty("folder").GetString().ShouldBe(Path.GetFullPath(factory.MailDirectory));
+        factory.Postmark.Sent.Single().GetProperty("To").GetString().ShouldBe(Admin);
+        Browser.MailTo(factory.MailDirectory, Admin).ShouldBeEmpty();
+        back.GetProperty("mail").GetProperty("transport").GetString().ShouldBe("Files");
+    }
+
+    [Test]
+    public async Task Outside_Development_a_mail_folder_is_ignored_and_the_log_says_so()
+    {
+        using var factory = new ServiceFactory();
+        using var production = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
+        using var client = production.CreateClient();
+
+        var view = await client.GetFromJsonAsync<JsonElement>("/install");
+
+        view.GetProperty("mail").GetBoolean().ShouldBeFalse();
+        factory.Logs.Lines.ShouldContain(line =>
+            line.StartsWith("Mail:PickupDirectory is set, but Nexus writes mail to files only in a Debug build running as Development.", StringComparison.Ordinal));
     }
 }

@@ -227,7 +227,12 @@ public sealed class InstanceFile
 /// The instance's settings as the service uses them. Each comes from configuration when an operator set it there, and
 /// otherwise from what the installer and the Settings page stored.
 /// </summary>
-public sealed class Instance(InstanceFile file, ServiceSettings settings, PluperfectMailOptions mail, IConfiguration configuration)
+public sealed class Instance(
+    InstanceFile file,
+    ServiceSettings settings,
+    PluperfectMailOptions mail,
+    IConfiguration configuration,
+    IHostEnvironment environment)
 {
     public const string CallbackPath = "/oauth/callback";
 
@@ -276,14 +281,26 @@ public sealed class Instance(InstanceFile file, ServiceSettings settings, Pluper
 
     public bool MailFromNameConfigured => Given(settings.MailFromName) is not null;
 
-    /// <summary>The folder mail is written to in place of sending it, when configuration names one.</summary>
-    public string? MailFolder => Given(mail.PickupDirectory);
+#if DEBUG
+    private static readonly bool DebugBuild = true;
+#else
+    private static readonly bool DebugBuild = false;
+#endif
+
+    /// <summary>
+    /// The folder mail is written to when no Postmark token and sender are set: the one configuration names, honored only
+    /// in a Debug build running as Development.
+    /// </summary>
+    public string? MailFolder => DebugBuild && environment.IsDevelopment() ? Given(mail.PickupDirectory) : null;
+
+    /// <summary>Whether configuration names a mail folder that this build or environment does not write to.</summary>
+    public bool MailFolderIgnored => MailFolder is null && Given(mail.PickupDirectory) is not null;
 
     public MailTransport Transport =>
-        MailFolder is not null
-            ? MailTransport.Files
-            : ServerToken is not null && Sender is not null
-                ? MailTransport.Postmark
+        ServerToken is not null && Sender is not null
+            ? MailTransport.Postmark
+            : MailFolder is not null
+                ? MailTransport.Files
                 : MailTransport.None;
 
     public bool MailReady => Transport != MailTransport.None;

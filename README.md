@@ -500,8 +500,10 @@ The first admin comes from the installer, below.
 
 - A user signs in with a password, or with a link mailed to them that works once, for 15 minutes. An invite
   link works once, for 7 days. Mail goes through `Pluperfect.Mail`'s Postmark transport, with the token set on the
-  Settings page; Development's configuration writes `.eml` files to `data/mail` instead. An instance without mail
-  offers no mailed links, and an invite answers its link for the admin to pass on.
+  Settings page. A Debug build running as Development writes `.eml` files to `data/mail` instead, until a Postmark
+  token and sender are saved to test real mail; turning Postmark off returns it to the files. A released service never
+  writes mail to files. An instance without mail offers no mailed links, and an invite answers its link for the admin
+  to pass on.
 - The session is `Pluperfect.Jwt`'s: an access token in an `HttpOnly` cookie, a refresh token that rotates,
   and the origin and antiforgery checks on every unsafe request. Every route needs a session but `/health`
   and the sign-in routes under `/auth`.
@@ -512,7 +514,7 @@ The first admin comes from the installer, below.
 
 | Route | Does |
 |---|---|
-| `GET /install`, `POST /install/database`, `POST /install/address`, `POST /install/admin`, `POST /install/code` | The installer, below |
+| `GET /install`, `POST /install/database`, `POST /install/address`, `PUT` and `DELETE /install/mail`, `POST /install/mail/test`, `POST /install/admin`, `POST /install/code` | The installer, below. Its mail routes answer 409 once the instance is set up, and its test mail goes to `{"to"}`. |
 | `/settings`, `/settings/addresses`, `/settings/mail`, `POST /settings/mail/test`, `/settings/database`, `PUT /settings/log` | Admins see and change the instance's addresses, mail, database, and how many days the log keeps an entry, and send a test mail |
 | `GET /log?workspace=&connection=&sync=&level=&before=&instance=` | The Log page's entries, below: newest first, 100 at a time, with `next` for the older ones. `level=Warning` keeps warnings and errors, and an admin's `instance=true` keeps the entries about the whole instance. |
 | `POST /auth/sign-in`, `POST /auth/link`, `POST /auth/link/redeem` | Signs in with a password, mails a link, or signs in with one |
@@ -618,12 +620,14 @@ An instance starts with nothing set. Until it has a database, a client address, 
 
 1. **The database:** a MySQL 8.4 server's host, port, database, user, and password. Nexus makes the database if it
    is missing and the user may, applies its migrations, and keeps the settings only once that works. A database
-   that already has an admin skips step 3, which is how an existing instance is adopted.
+   that already has an admin skips step 4, which is how an existing instance is adopted.
 2. **The client's address:** where people open Nexus. CORS and the origin check allow it alone, and mailed links
    and connect pages point there.
-3. **The first admin:** an email and a password, signed in at once.
-4. **Addresses and mail:** the https address providers send people back to after signing in, at
-   `/oauth/callback`, and Postmark's server token and sender, with a test mail. Mail may stay off.
+3. **Mail:** Postmark's server token and sender, with a test mail to an address you name. Mail may stay off.
+   A Debug build running as Development writes mail to `data/mail`, and the step says so.
+4. **The first admin:** an email, signed in at once. Once mail works the password is optional, and an admin without
+   one signs in with mailed links. With mail off, a password is required.
+5. **The callback address:** the https address providers send people back to after signing in, at `/oauth/callback`.
 
 Admins change all of it later on the Settings page. A new database is opened and brought up to date before
 Nexus moves to it, and a database without an admin sends the instance back to step 3.
@@ -664,7 +668,7 @@ debugging. A configured value wins over the stored one, and the pages show it wi
 | `Mail:ServerToken` | `Mail__ServerToken` | Postmark's server token |
 | `Nexus:MailFrom`, `Nexus:MailFromName` | `Nexus__MailFrom`, `Nexus__MailFromName` | The sender |
 | `Jwt:SigningKey` | `Jwt__SigningKey` | The session signing key the service makes, at least 32 bytes |
-| `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail: it is written to files there instead |
+| `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail, in a Debug build running as Development: it is written to files there until a Postmark token and sender are saved. Anywhere else it is ignored, and the log says so. |
 | `Nexus:Schwab:AppKey`, `Nexus:Schwab:AppSecret` | `Nexus__Schwab__AppKey`, `Nexus__Schwab__AppSecret` | Each workspace's Schwab app |
 | `Nexus:LogDays` | `Nexus__LogDays` | How many days the Log page keeps an entry |
 

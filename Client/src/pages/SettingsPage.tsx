@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { type DatabaseForm, getInstall, getSettings, saveDatabase, saveLogDays, type Settings } from '../api'
 import { AddressesForm, DatabaseFields, MailForm } from '../components/InstanceForms'
+import { settingsMail } from '../mail'
 import { useSession } from '../session'
 
 /** The instance's own settings, for admins: its addresses, its mail, and its database. */
@@ -46,7 +47,7 @@ export function SettingsPage() {
           </section>
           <section>
             <h2>Mail</h2>
-            <MailForm settings={settings} onSaved={setSettings} />
+            <MailForm mail={settings.mail} actions={settingsMail(setSettings)} />
           </section>
           <section>
             <h2>Database</h2>

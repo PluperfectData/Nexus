@@ -233,6 +233,92 @@ public sealed partial class InstallTests
         factory.Database.Prepared.ShouldContain("Server=configured.test;Database=nexus;User ID=ops");
     }
 
+    [Test]
+    public async Task The_installers_mail_needs_its_access_and_closes_once_the_instance_is_set_up()
+    {
+        using var factory = new ServiceFactory(installed: false, mailToFiles: false);
+        using var browser = factory.NewBrowser();
+        (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
+        (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
+        var mail = new { serverToken = FakePostmark.Token, from = "nexus@acme.test", fromName = "Acme Nexus" };
+
+        using var bare = await SendAsync(browser, HttpMethod.Put, "/install/mail", mail);
+        using var saved = await SendAsync(browser, HttpMethod.Put, "/install/mail", mail, local: true);
+        using var nowhere = await SendAsync(browser, HttpMethod.Post, "/install/mail/test", new { to = "" }, local: true);
+        using var tested = await SendAsync(browser, HttpMethod.Post, "/install/mail/test", new { to = "founder@acme.test" }, local: true);
+        using var made = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = "" }, local: true);
+        using var closed = await SendAsync(browser, HttpMethod.Put, "/install/mail", mail, local: true);
+
+        bare.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK, await saved.Content.ReadAsStringAsync());
+        var view = await saved.Content.ReadFromJsonAsync<JsonElement>();
+        view.GetProperty("mail").GetBoolean().ShouldBeTrue();
+        view.GetProperty("mailSettings").GetProperty("transport").GetString().ShouldBe("Postmark");
+        view.ToString().ShouldNotContain(FakePostmark.Token);
+        nowhere.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        tested.StatusCode.ShouldBe(HttpStatusCode.OK, await tested.Content.ReadAsStringAsync());
+        factory.Postmark.Sent.Single().GetProperty("To").GetString().ShouldBe("founder@acme.test");
+        made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
+        (await made.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("hasPassword").GetBoolean().ShouldBeFalse();
+        closed.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await Browser.DetailAsync(closed)).ShouldBe("Nexus is set up. An admin changes its mail on the Settings page.");
+    }
+
+    [Test]
+    public async Task The_first_admin_needs_a_password_while_mail_is_off()
+    {
+        using var factory = new ServiceFactory(installed: false, mailToFiles: false);
+        using var browser = factory.NewBrowser();
+        (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
+        (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
+
+        using var passwordless = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = "" }, local: true);
+        using var made = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = Browser.Password }, local: true);
+
+        passwordless.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Browser.DetailAsync(passwordless)).ShouldBe("Set up mail, or choose a password. Without either, there is no way to sign in again.");
+        made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
+    }
+
+    [Test]
+    public async Task With_mail_written_to_files_the_first_admin_needs_no_password_and_signs_in_by_link()
+    {
+        using var factory = new ServiceFactory(installed: false);
+        using var browser = factory.NewBrowser();
+        (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
+        (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
+        var view = await GetAsync(browser, local: true);
+
+        using var made = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = "" }, local: true);
+        using var later = factory.NewBrowser();
+        (await later.SendAsync(HttpMethod.Post, "/auth/link", new { email = "founder@acme.test" })).StatusCode.ShouldBe(HttpStatusCode.Accepted);
+        var link = Browser.MailTo(factory.MailDirectory, "founder@acme.test").Single();
+        using var redeemed = await later.SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token = Browser.LinkToken(link) });
+
+        view.GetProperty("mail").GetBoolean().ShouldBeTrue();
+        view.GetProperty("mailSettings").GetProperty("transport").GetString().ShouldBe("Files");
+        made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
+        (await browser.GetAsync<JsonElement>("/auth/me")).GetProperty("isAdmin").GetBoolean().ShouldBeTrue();
+        redeemed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await later.GetAsync<JsonElement>("/auth/me")).GetProperty("email").GetString().ShouldBe("founder@acme.test");
+    }
+
+    [Test]
+    public async Task Make_an_admin_with_no_password_keeps_the_users_own()
+    {
+        using var factory = new ServiceFactory();
+        await factory.AddUserAsync("rowan@acme.test", Browser.Password);
+        using var browser = factory.NewBrowser();
+
+        using var made = await PostAsync(browser, "/install/admin", new { email = "rowan@acme.test", password = "" }, local: true);
+
+        made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
+        (await made.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("hasPassword").GetBoolean().ShouldBeTrue();
+        using var other = factory.NewBrowser();
+        (await other.SignInAsync("rowan@acme.test", Browser.Password)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await other.GetAsync<JsonElement>("/auth/me")).GetProperty("isAdmin").GetBoolean().ShouldBeTrue();
+    }
+
     private static string CodeFromLog(ServiceFactory factory) =>
         CodePattern().Match(factory.Logs.Lines.Single(l => l.Contains("install code", StringComparison.Ordinal))).Value;
 
@@ -251,6 +337,13 @@ public sealed partial class InstallTests
     {
         var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         Mark(request, local, code, origin, forwarded);
+        return browser.Client.SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> SendAsync(Browser browser, HttpMethod method, string path, object? body = null, string? code = null, bool local = false)
+    {
+        var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
+        Mark(request, local, code, ServiceFactory.ClientOrigin, forwarded: false);
         return browser.Client.SendAsync(request);
     }
 

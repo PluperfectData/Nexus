@@ -49,8 +49,6 @@ public sealed record TestMailView(string SentTo, MailTransport Transport, string
 [Authorize(Policy = NexusClaims.AdminPolicy)]
 public sealed class SettingsController(Instance instance, Installation installation, IMailer mailer, IServer server, IServiceScopeFactory scopes) : ControllerBase
 {
-    private const int MaxNameLength = 100;
-
     [HttpGet]
     public SettingsView Get() => View();
 
@@ -103,31 +101,12 @@ public sealed class SettingsController(Instance instance, Installation installat
     [HttpPut("mail")]
     public async Task<ActionResult<SettingsView>> Mail(MailSettingsRequest request, CancellationToken ct)
     {
-        var token = string.IsNullOrWhiteSpace(request.ServerToken) ? null : request.ServerToken.Trim();
-        if (instance.ServerTokenConfigured && token is not null)
+        if (MailForm.Save(request, instance) is { } failed)
         {
-            return Problem("Postmark's server token is set by the service's configuration, in Mail:ServerToken.", statusCode: StatusCodes.Status409Conflict);
+            return Problem(failed.Problem, statusCode: failed.Status);
         }
 
-        if (token is null && !instance.ServerTokenConfigured && !instance.File.HasServerToken)
-        {
-            return Problem("Enter Postmark's server token. Postmark shows it under the server's API Tokens.", statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        string? from = null;
-        if (!instance.MailFromConfigured && (from = Emails.Normalize(request.From)) is null)
-        {
-            return Problem("Enter the address mail comes from, on a domain Postmark may send as.", statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        var name = string.IsNullOrWhiteSpace(request.FromName) ? Instance.DefaultSenderName : request.FromName.Trim();
-        if (name.Length > MaxNameLength || name.Any(char.IsControl))
-        {
-            return Problem($"A sender's name is one line of up to {MaxNameLength} characters.", statusCode: StatusCodes.Status400BadRequest);
-        }
-
-        instance.File.SaveMail(token, from, name);
-        var tokenSaid = token is null ? string.Empty : ", with a new server token";
+        var tokenSaid = string.IsNullOrWhiteSpace(request.ServerToken) ? string.Empty : ", with a new server token";
         await NoteAsync(log => log.Info($"Mail was set to go through Postmark, from {instance.MailFromName} at {instance.Sender}{tokenSaid}.", LogPlace.Instance), ct);
         return View();
     }
@@ -180,27 +159,14 @@ public sealed class SettingsController(Instance instance, Installation installat
         }
 
         var to = User.FindFirstValue(ClaimTypes.Name)!;
-        try
+        if (await MailForm.TestAsync(mailer, instance, to, ct) is { } failed)
         {
-            await mailer.SendAsync(
-                new MailRequest
-                {
-                    From = new MailAddress(instance.MailFrom!, instance.MailFromName),
-                    To = new MailAddress(to),
-                    Subject = "Nexus can send mail",
-                    HtmlBody = "<p>This instance of Nexus sends mail with these settings. Sign-in links and invites go out the same way.</p>",
-                    TextBody = "This instance of Nexus sends mail with these settings. Sign-in links and invites go out the same way.",
-                },
-                ct);
-        }
-        catch (MailDeliveryException ex)
-        {
-            await NoteAsync(log => log.Warn($"A test mail to {to} failed: {ex.Message}", LogPlace.Instance), ct);
-            return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            await NoteAsync(log => log.Warn($"A test mail to {to} failed: {failed}", LogPlace.Instance), ct);
+            return Problem(failed, statusCode: StatusCodes.Status502BadGateway);
         }
 
         await NoteAsync(log => log.Info($"A test mail was sent to {to}.", LogPlace.Instance), ct);
-        return new TestMailView(to, instance.Transport, instance.Transport == MailTransport.Files ? Path.GetFullPath(instance.MailFolder!) : null);
+        return MailForm.Sent(to, instance);
     }
 
     /// <summary>Moves the service to another database, or changes how it signs in to this one, once the new one opens and is brought up to date.</summary>
@@ -253,15 +219,7 @@ public sealed class SettingsController(Instance instance, Installation installat
             instance.CallbackOriginConfigured,
             instance.CallbackUrl,
             CallbackSuggestion(),
-            new MailView(
-                instance.Transport,
-                instance.ServerToken is not null,
-                instance.ServerTokenConfigured,
-                instance.Sender,
-                instance.MailFromConfigured,
-                instance.MailFromName,
-                instance.MailFromNameConfigured,
-                instance.MailFolder is { } folder ? Path.GetFullPath(folder) : null),
+            MailForm.View(instance),
             place is null ? null : new DatabaseView(place.Host, place.Port, place.Name, place.User),
             configured is not null,
             instance.LogDays,
@@ -274,4 +232,80 @@ public sealed class SettingsController(Instance instance, Installation installat
             .Select(address => Origins.Parse(address, httpsOnly: true))
             .FirstOrDefault(origin => origin is not null)
         ?? $"https://{Request.Host}";
+}
+
+/// <summary>Keeps and tests the instance's mail, for the installer and the Settings page alike.</summary>
+public static class MailForm
+{
+    public const int MaxNameLength = 100;
+
+    /// <summary>
+    /// Keeps Postmark's server token and the sender the form names, or answers why it cannot, with the status to answer
+    /// it with. A blank token keeps the one stored, and a value set by configuration is left as it is.
+    /// </summary>
+    public static (string Problem, int Status)? Save(MailSettingsRequest request, Instance instance)
+    {
+        var token = string.IsNullOrWhiteSpace(request.ServerToken) ? null : request.ServerToken.Trim();
+        if (instance.ServerTokenConfigured && token is not null)
+        {
+            return ("Postmark's server token is set by the service's configuration, in Mail:ServerToken.", StatusCodes.Status409Conflict);
+        }
+
+        if (token is null && !instance.ServerTokenConfigured && !instance.File.HasServerToken)
+        {
+            return ("Enter Postmark's server token. Postmark shows it under the server's API Tokens.", StatusCodes.Status400BadRequest);
+        }
+
+        string? from = null;
+        if (!instance.MailFromConfigured && (from = Emails.Normalize(request.From)) is null)
+        {
+            return ("Enter the address mail comes from, on a domain Postmark may send as.", StatusCodes.Status400BadRequest);
+        }
+
+        var name = string.IsNullOrWhiteSpace(request.FromName) ? Instance.DefaultSenderName : request.FromName.Trim();
+        if (name.Length > MaxNameLength || name.Any(char.IsControl))
+        {
+            return ($"A sender's name is one line of up to {MaxNameLength} characters.", StatusCodes.Status400BadRequest);
+        }
+
+        instance.File.SaveMail(token, from, name);
+        return null;
+    }
+
+    /// <summary>Mails <paramref name="to"/> to show the settings work. Answers why the transport refused, or null once sent.</summary>
+    public static async Task<string?> TestAsync(IMailer mailer, Instance instance, string to, CancellationToken ct)
+    {
+        try
+        {
+            await mailer.SendAsync(
+                new MailRequest
+                {
+                    From = new MailAddress(instance.MailFrom!, instance.MailFromName),
+                    To = new MailAddress(to),
+                    Subject = "Nexus can send mail",
+                    HtmlBody = "<p>This instance of Nexus sends mail with these settings. Sign-in links and invites go out the same way.</p>",
+                    TextBody = "This instance of Nexus sends mail with these settings. Sign-in links and invites go out the same way.",
+                },
+                ct);
+            return null;
+        }
+        catch (MailDeliveryException ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    public static TestMailView Sent(string to, Instance instance) =>
+        new(to, instance.Transport, instance.Transport == MailTransport.Files ? Path.GetFullPath(instance.MailFolder!) : null);
+
+    public static MailView View(Instance instance) =>
+        new(
+            instance.Transport,
+            instance.ServerToken is not null,
+            instance.ServerTokenConfigured,
+            instance.Sender,
+            instance.MailFromConfigured,
+            instance.MailFromName,
+            instance.MailFromNameConfigured,
+            instance.MailFolder is { } folder ? Path.GetFullPath(folder) : null);
 }

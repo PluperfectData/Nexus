@@ -23,6 +23,7 @@ const installed: InstallView = {
   databaseProblem: null,
   clientOriginConfigured: false,
   mail: true,
+  mailSettings: null,
 }
 
 // A session that changes when the page sets it, as the app's does, so the page re-renders signed in.

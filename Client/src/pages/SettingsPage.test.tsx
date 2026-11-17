@@ -53,6 +53,7 @@ const notInstalled: InstallView = {
   databaseProblem: null,
   clientOriginConfigured: false,
   mail: true,
+  mailSettings: null,
 }
 
 const renderAs = (me: Me) =>

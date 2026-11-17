@@ -1,13 +1,5 @@
 import { type FormEvent, useState } from 'react'
-import {
-  type DatabaseForm,
-  type DatabasePlace,
-  saveAddresses,
-  saveMail,
-  type Settings,
-  testMail,
-  turnOffMail,
-} from '../api'
+import { type DatabaseForm, type DatabasePlace, type MailActions, type MailSettings, saveAddresses, type Settings } from '../api'
 
 const CONFIGURED = "Set by the service's configuration."
 
@@ -188,11 +180,11 @@ export function AddressesForm({ settings, onSaved }: { settings: Settings; onSav
 }
 
 /** Postmark's server token and the sender, with a test mail to the admin. */
-export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (settings: Settings) => void }) {
-  const mail = settings.mail
+export function MailForm({ mail, actions }: { mail: MailSettings; actions: MailActions }) {
   const [token, setToken] = useState('')
   const [from, setFrom] = useState(mail.from ?? '')
   const [fromName, setFromName] = useState(mail.fromName)
+  const [recipient, setRecipient] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -213,7 +205,7 @@ export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (
   function submit(event: FormEvent) {
     event.preventDefault()
     void act(async () => {
-      onSaved(await saveMail(token.trim(), from.trim(), fromName.trim()))
+      await actions.save(token.trim(), from.trim(), fromName.trim())
       setToken('')
       setNotice('Saved. Send a test mail to check it.')
     })
@@ -221,16 +213,21 @@ export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (
 
   const test = () =>
     act(async () => {
-      const sent = await testMail()
+      const sent = await actions.test(recipient.trim())
       setNotice(sent.folder ? `Wrote a test mail for ${sent.sentTo} in ${sent.folder}.` : `Sent a test mail to ${sent.sentTo}.`)
     })
 
+  // In a debug build, turning Postmark off sends mail back to its files.
   const off = () =>
-    window.confirm('Turn mail off? Invites then give a link to pass on, and sign-in links are not offered.') &&
+    window.confirm(
+      mail.folder
+        ? `Stop sending through Postmark? Mail goes to files in ${mail.folder} again.`
+        : 'Turn mail off? Invites then give a link to pass on, and sign-in links are not offered.',
+    ) &&
     act(async () => {
-      onSaved(await turnOffMail())
+      await actions.off()
       setFrom('')
-      setNotice('Mail is off.')
+      setNotice(mail.folder ? 'Mail goes to files again.' : 'Mail is off.')
     })
 
   const stored = mail.tokenSet && !mail.tokenConfigured
@@ -239,8 +236,11 @@ export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (
     <form className="form stacked" onSubmit={submit}>
       {mail.transport === 'Files' && (
         <p className="muted">
-          This instance's configuration writes mail to files in {mail.folder} instead of sending it.
+          This debug build writes mail to files in {mail.folder}. To test real mail, save a Postmark token and sender below.
         </p>
+      )}
+      {mail.transport === 'Postmark' && mail.folder && (
+        <p className="muted">Mail goes through Postmark. Use mail files again to write it to {mail.folder} instead.</p>
       )}
       {mail.transport === 'None' && (
         <p className="muted">
@@ -274,6 +274,12 @@ export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (
         Sender's name
         <input value={fromName} onChange={(e) => setFromName(e.target.value)} disabled={mail.fromNameConfigured} />
       </label>
+      {actions.asksForRecipient && mail.transport !== 'None' && (
+        <label>
+          Send a test mail to
+          <input type="email" value={recipient} onChange={(e) => setRecipient(e.target.value)} autoComplete="email" />
+        </label>
+      )}
       {error && <p className="error">{error}</p>}
       {notice && <p className="success">{notice}</p>}
       <div className="form-actions">
@@ -281,13 +287,13 @@ export function MailForm({ settings, onSaved }: { settings: Settings; onSaved: (
           Save mail
         </button>
         {mail.transport !== 'None' && (
-          <button type="button" className="secondary" onClick={test} disabled={busy}>
+          <button type="button" className="secondary" onClick={test} disabled={busy || (actions.asksForRecipient && !recipient.trim())}>
             Send a test mail
           </button>
         )}
         {stored && (
           <button type="button" className="quiet" onClick={off} disabled={busy}>
-            Turn mail off
+            {mail.folder ? 'Use mail files again' : 'Turn mail off'}
           </button>
         )}
       </div>

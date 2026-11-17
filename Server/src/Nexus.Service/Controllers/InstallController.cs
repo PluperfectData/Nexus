@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Nexus.Service.Auth;
 using Nexus.Service.Storage;
 using Pluperfect.Jwt;
+using Pluperfect.Mail;
 
 namespace Nexus.Service.Controllers;
 
@@ -12,7 +13,10 @@ public sealed record DatabaseRequest(string? Host, int? Port, string? Name, stri
 
 public sealed record InstallAddressRequest(string? ClientOrigin);
 
+/// <summary>The first admin, or an admin made for someone locked out. The password may be blank once mail works.</summary>
 public sealed record InstallAdminRequest(string? Email, string? Password);
+
+public sealed record InstallTestMailRequest(string? To);
 
 /// <summary>A database's place, without its password.</summary>
 public sealed record DatabaseView(string Host, int Port, string Name, string User);
@@ -30,7 +34,8 @@ public sealed record InstallView(
     DatabaseView? Database,
     string? DatabaseProblem,
     bool ClientOriginConfigured,
-    bool Mail);
+    bool Mail,
+    MailView? MailSettings);
 
 /// <summary>
 /// The first-run installer: the database, then the client's address, then the first admin. On an instance already set
@@ -42,9 +47,18 @@ public sealed record InstallView(
 [AllowAnonymous]
 [SkipAntiforgery]
 [AnyOrigin]
-public sealed class InstallController(Installation installation, Instance instance, InstallAccess access, IServiceScopeFactory scopes, TimeProvider time)
-    : ControllerBase
+public sealed class InstallController(
+    Installation installation,
+    Instance instance,
+    InstallAccess access,
+    IMailer mailer,
+    IServiceScopeFactory scopes,
+    TimeProvider time) : ControllerBase
 {
+    private const string MailIsSet = "Nexus is set up. An admin changes its mail on the Settings page.";
+
+    private const string NoWayBack = "Set up mail, or choose a password. Without either, there is no way to sign in again.";
+
     [HttpGet]
     public async Task<InstallView> Get(CancellationToken ct) => await ViewAsync(access.Check(HttpContext) == InstallAccessResult.Allowed, ct);
 
@@ -132,7 +146,13 @@ public sealed class InstallController(Installation installation, Instance instan
             return Problem("Enter an email address.", statusCode: StatusCodes.Status400BadRequest);
         }
 
-        if (Passwords.Problem(request.Password) is { } problem)
+        var password = string.IsNullOrEmpty(request.Password) ? null : request.Password;
+        if (password is null && !instance.MailReady)
+        {
+            return Problem(NoWayBack, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        if (password is not null && Passwords.Problem(password) is { } problem)
         {
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
@@ -147,12 +167,22 @@ public sealed class InstallController(Installation installation, Instance instan
             db.Users.Add(user);
         }
 
-        // A new stamp ends the user's mailed links, since the installer sets their password.
+        // A new stamp ends the user's mailed links, since the installer signs them in. A blank password leaves theirs.
         user.IsAdmin = true;
         user.LinkStamp = SignInLinks.NewStamp();
-        user.PasswordHash = Passwords.Hash(user, request.Password!);
+        if (password is not null)
+        {
+            user.PasswordHash = Passwords.Hash(user, password);
+        }
+
         services.GetRequiredService<OperatorLog>().Info(
-            existing ? $"The installer made {email} an admin, with a new password." : $"The installer made {email}, the first admin.",
+            (existing, password is not null) switch
+            {
+                (true, true) => $"The installer made {email} an admin, with a new password.",
+                (true, false) => $"The installer made {email} an admin.",
+                (false, true) => $"The installer made {email}, the first admin.",
+                (false, false) => $"The installer made {email}, the first admin, who signs in with mailed links.",
+            },
             LogPlace.Instance);
         await db.SaveChangesAsync(ct);
         if (existing)
@@ -162,7 +192,66 @@ public sealed class InstallController(Installation installation, Instance instan
 
         await installation.AdminMadeAsync(ct);
         await sessions.SignInAsync(user, persistent: false, ct);
-        return new MeView(true, user.Id, user.Email, true, true);
+        return new MeView(true, user.Id, user.Email, true, user.PasswordHash is not null);
+    }
+
+    /// <summary>Sets Postmark's server token and the sender before the first admin, as the Settings page does after.</summary>
+    [HttpPut("mail")]
+    public async Task<ActionResult<InstallView>> Mail(MailSettingsRequest request, CancellationToken ct)
+    {
+        if (await MailRefusalAsync(ct) is { } refused)
+        {
+            return refused;
+        }
+
+        if (MailForm.Save(request, instance) is { } failed)
+        {
+            return Problem(failed.Problem, statusCode: failed.Status);
+        }
+
+        if (installation.DatabaseReady)
+        {
+            await NoteAsync($"The installer set mail to go through Postmark, from {instance.MailFromName} at {instance.Sender}.", ct);
+        }
+
+        return await ViewAsync(allowed: true, ct);
+    }
+
+    /// <summary>Forgets the stored token and sender, which turns mail off unless configuration sets it.</summary>
+    [HttpDelete("mail")]
+    public async Task<ActionResult<InstallView>> TurnOffMail(CancellationToken ct)
+    {
+        if (await MailRefusalAsync(ct) is { } refused)
+        {
+            return refused;
+        }
+
+        instance.File.ClearMail();
+        return await ViewAsync(allowed: true, ct);
+    }
+
+    /// <summary>Mails the address given, to show the settings work. No admin exists yet to mail instead.</summary>
+    [HttpPost("mail/test")]
+    public async Task<ActionResult<TestMailView>> TestMail(InstallTestMailRequest request, CancellationToken ct)
+    {
+        if (await MailRefusalAsync(ct) is { } refused)
+        {
+            return refused;
+        }
+
+        if (!instance.MailReady)
+        {
+            return Problem(InstanceMailer.NotSetUp, statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (Emails.Normalize(request.To) is not { } to)
+        {
+            return Problem("Enter the address to send the test mail to.", statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return await MailForm.TestAsync(mailer, instance, to, ct) is { } failed
+            ? Problem(failed, statusCode: StatusCodes.Status502BadGateway)
+            : MailForm.Sent(to, instance);
     }
 
     /// <summary>Writes the install code to the service's log, for a page on another machine. It is written at most once a minute.</summary>
@@ -172,6 +261,10 @@ public sealed class InstallController(Installation installation, Instance instan
         await installation.AnnounceAsync(ct);
         return Accepted();
     }
+
+    // Mail is the installer's only until the instance is set up; the Settings page changes it from then on.
+    private async Task<ObjectResult?> MailRefusalAsync(CancellationToken ct) =>
+        Refusal() ?? (await installation.IsInstalledAsync(ct) ? Problem(MailIsSet, statusCode: StatusCodes.Status409Conflict) : null);
 
     // The installer's routes run before the database is set, so each entry is saved through a context of its own.
     private async Task NoteAsync(string text, CancellationToken ct)
@@ -207,7 +300,8 @@ public sealed class InstallController(Installation installation, Instance instan
             allowed && place is not null ? new DatabaseView(place.Host, place.Port, place.Name, place.User) : null,
             allowed ? installation.DatabaseProblem : null,
             instance.ClientOriginConfigured,
-            instance.MailReady);
+            instance.MailReady,
+            allowed ? MailForm.View(instance) : null);
     }
 }
 

@@ -348,6 +348,8 @@ export interface InstallView {
   clientOriginConfigured: boolean
   /** Whether the instance mails links, so its sign-in page can offer one. */
   mail: boolean
+  /** How the instance sends mail, given when this page may use the installer. */
+  mailSettings: MailSettings | null
 }
 
 export type MailTransport = 'None' | 'Postmark' | 'Files'
@@ -401,8 +403,13 @@ export const installDatabase = (code: string | null, database: DatabaseForm) =>
   installRequest<InstallView>(code, '/install/database', 'POST', database)
 export const installAddress = (code: string | null, clientOrigin: string) =>
   installRequest<InstallView>(code, '/install/address', 'POST', { clientOrigin })
+/** The first admin; the password may be blank once mail works, to sign in by mailed links. */
 export const installAdmin = (code: string | null, email: string, password: string) =>
   installRequest<Me>(code, '/install/admin', 'POST', { email, password })
+export const installMail = (code: string | null, serverToken: string, from: string, fromName: string) =>
+  installRequest<InstallView>(code, '/install/mail', 'PUT', { serverToken, from, fromName })
+export const installMailOff = (code: string | null) => installRequest<InstallView>(code, '/install/mail', 'DELETE')
+export const installTestMail = (code: string | null, to: string) => installRequest<TestMail>(code, '/install/mail/test', 'POST', { to })
 export const askForInstallCode = () => installRequest<null>(null, '/install/code', 'POST')
 
 export const getSettings = () => request<Settings>('/settings')
@@ -412,6 +419,15 @@ export const saveMail = (serverToken: string, from: string, fromName: string) =>
   request<Settings>('/settings/mail', 'PUT', { serverToken, from, fromName })
 export const turnOffMail = () => request<Settings>('/settings/mail', 'DELETE')
 export const testMail = () => request<TestMail>('/settings/mail/test', 'POST')
+
+/** What the mail form does with what it is given: the Settings page's calls, or the installer's. */
+export interface MailActions {
+  save: (serverToken: string, from: string, fromName: string) => Promise<void>
+  off: () => Promise<void>
+  /** The installer asks where a test mail goes, since no admin exists yet to mail. */
+  test: (to: string) => Promise<TestMail>
+  asksForRecipient: boolean
+}
 export const saveDatabase = (database: DatabaseForm) => request<Settings>('/settings/database', 'PUT', database)
 export const saveLogDays = (days: number) => request<Settings>('/settings/log', 'PUT', { days })
 

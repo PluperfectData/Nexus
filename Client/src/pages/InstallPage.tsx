@@ -8,7 +8,11 @@ import {
   installAddress,
   installAdmin,
   installDatabase,
+  installMail,
+  installMailOff,
+  installTestMail,
   type InstallView,
+  type MailActions,
   type Settings,
 } from '../api'
 import { AddressesForm, DatabaseFields, MailForm } from '../components/InstanceForms'
@@ -23,8 +27,8 @@ function codeInLink(): string | null {
 }
 
 /**
- * The first-run installer: the database, then the client's address, then the first admin, then the addresses and mail.
- * On an instance already set up, it makes an admin for someone locked out.
+ * The first-run installer: the database, then the client's address, then mail, then the first admin, then the callback
+ * address. On an instance already set up, it makes an admin for someone locked out.
  */
 export function InstallPage() {
   const { me, setMe } = useSession()
@@ -33,6 +37,8 @@ export function InstallPage() {
   const [view, setView] = useState<InstallView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [finishing, setFinishing] = useState<Settings | null>(null)
+  // Mail has no stage of its own: the page shows it on reaching the admin stage, until Continue.
+  const [mailSettled, setMailSettled] = useState(false)
 
   // The code leaves the address bar once read, so it stays out of the browser's history.
   useEffect(() => {
@@ -55,6 +61,13 @@ export function InstallPage() {
     setView(await getInstall(code))
   }
 
+  const mailActions: MailActions = {
+    save: async (serverToken, from, fromName) => setView(await installMail(code, serverToken, from, fromName)),
+    off: async () => setView(await installMailOff(code)),
+    test: (to) => installTestMail(code, to),
+    asksForRecipient: true,
+  }
+
   function body() {
     if (view === null) return error ? null : <p className="muted">Loading…</p>
     if (finishing) return <Finish settings={finishing} onSaved={setFinishing} onDone={() => navigate('/')} />
@@ -66,7 +79,11 @@ export function InstallPage() {
       case 'Address':
         return <AddressStage onSave={async (origin) => setView(await installAddress(code, origin))} />
       case 'Admin':
-        return <AdminStage onMake={async (email, password) => madeAdmin(await installAdmin(code, email, password))} />
+        return mailSettled ? (
+          <AdminStage mail={view.mail} onMake={async (email, password) => madeAdmin(await installAdmin(code, email, password))} />
+        ) : (
+          <MailStage view={view} actions={mailActions} onContinue={() => setMailSettled(true)} />
+        )
       default:
         return null
     }
@@ -82,7 +99,7 @@ export function InstallPage() {
 }
 
 function Steps({ at }: { at: number }) {
-  const names = ['Database', 'Address', 'First admin', 'Mail']
+  const names = ['Database', 'Address', 'Mail', 'First admin', 'Callback']
   return (
     <p className="muted">
       Step {at} of {names.length}: {names[at - 1]}
@@ -204,7 +221,16 @@ function AddressStage({ onSave }: { onSave: (origin: string) => Promise<void> })
 }
 
 /** An email and a password, twice: the first admin, or an admin made for someone locked out. */
-function AdminForm({ submitLabel, onMake }: { submitLabel: string; onMake: (email: string, password: string) => Promise<void> }) {
+/** An email and a password, twice. Once mail works the password may stay blank, to sign in by mailed links. */
+function AdminForm({
+  submitLabel,
+  passwordOptional,
+  onMake,
+}: {
+  submitLabel: string
+  passwordOptional: boolean
+  onMake: (email: string, password: string) => Promise<void>
+}) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -233,20 +259,32 @@ function AdminForm({ submitLabel, onMake }: { submitLabel: string; onMake: (emai
         Email
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
       </label>
+      {passwordOptional && (
+        <p className="hint muted">
+          A password is optional: leave both fields blank to sign in with mailed links. You can set one later on your Account
+          page.
+        </p>
+      )}
       <label>
-        Password
+        {passwordOptional ? 'Password (optional)' : 'Password'}
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           minLength={MIN_PASSWORD}
-          required
+          required={!passwordOptional}
           autoComplete="new-password"
         />
       </label>
       <label>
-        The same password again
-        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required autoComplete="new-password" />
+        {passwordOptional ? 'The same password again (optional)' : 'The same password again'}
+        <input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          required={!passwordOptional}
+          autoComplete="new-password"
+        />
       </label>
       <p className="hint muted">At least {MIN_PASSWORD} characters.</p>
       {error && <p className="error">{error}</p>}
@@ -259,12 +297,30 @@ function AdminForm({ submitLabel, onMake }: { submitLabel: string; onMake: (emai
   )
 }
 
-function AdminStage({ onMake }: { onMake: (email: string, password: string) => Promise<void> }) {
+function MailStage({ view, actions, onContinue }: { view: InstallView; actions: MailActions; onContinue: () => void }) {
   return (
     <>
       <Steps at={3} />
+      <p>
+        Nexus mails sign-in links and invites. With mail, the first admin may sign in by mailed link alone. Without it, an
+        invite gives a link to pass on, the sign-in page offers only passwords, and the first admin needs a password.
+      </p>
+      {view.mailSettings && <MailForm mail={view.mailSettings} actions={actions} />}
+      <div className="form-actions">
+        <button type="button" onClick={onContinue}>
+          {view.mail ? 'Continue' : 'Continue without mail'}
+        </button>
+      </div>
+    </>
+  )
+}
+
+function AdminStage({ mail, onMake }: { mail: boolean; onMake: (email: string, password: string) => Promise<void> }) {
+  return (
+    <>
+      <Steps at={4} />
       <p>The first admin makes the workspaces, invites everyone else, and links apps such as Scry.</p>
-      <AdminForm submitLabel="Make the admin and sign in" onMake={onMake} />
+      <AdminForm submitLabel="Make the admin and sign in" passwordOptional={mail} onMake={onMake} />
     </>
   )
 }
@@ -272,15 +328,9 @@ function AdminStage({ onMake }: { onMake: (email: string, password: string) => P
 function Finish({ settings, onSaved, onDone }: { settings: Settings; onSaved: (settings: Settings) => void; onDone: () => void }) {
   return (
     <>
-      <Steps at={4} />
-      <p>
-        Nexus is set up. Set the address providers send people back to and how it sends mail now, or later on the Settings
-        page.
-      </p>
-      <h2>Addresses</h2>
+      <Steps at={5} />
+      <p>Nexus is set up. Set the address providers send people back to now, or later on the Settings page.</p>
       <AddressesForm settings={settings} onSaved={onSaved} />
-      <h2>Mail</h2>
-      <MailForm settings={settings} onSaved={onSaved} />
       <div className="form-actions">
         <button type="button" onClick={onDone}>
           Done
@@ -337,10 +387,14 @@ function Installed({
         ) : view.allowed ? (
           <>
             <p className="muted">
-              This makes the address an admin with this password, and signs it out everywhere else. A new address becomes a
-              new admin.
+              This makes the address an admin, with this password when one is given, and signs it out everywhere else. A new
+              address becomes a new admin.
             </p>
-            <AdminForm submitLabel="Make the admin and sign in" onMake={async (email, password) => onAdmin(await installAdmin(code, email, password))} />
+            <AdminForm
+              submitLabel="Make the admin and sign in"
+              passwordOptional={view.mail}
+              onMake={async (email, password) => onAdmin(await installAdmin(code, email, password))}
+            />
           </>
         ) : (
           <CodeStage given={code} recovery onCode={onCode} />
