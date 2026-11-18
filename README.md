@@ -8,6 +8,7 @@
 
 [![API](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml)
 [![Client](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml)
+[![Docker](https://github.com/PluperfectData/Nexus/actions/workflows/docker.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/docker.yml)
 
 </div>
 
@@ -81,16 +82,58 @@ Each connector has its own page in [the documentation](docs/connectors/README.md
 
 ## Quick start
 
-You'll run the Nexus service and its web client on your own machine, then set Nexus up in the browser.
+Nexus installs three ways. Each runs it on one computer at `http://localhost:6165`, then sets it up in the browser,
+and each can set up [Scry](https://github.com/PluperfectData/Scry) beside it.
 
-### What you need
+| Way | For | Needs |
+|---|---|---|
+| [On Windows](#on-windows) | Using Nexus on a Windows computer | Windows 10 or 11 |
+| [In Docker](#in-docker) | Running Nexus in containers, on any computer | Docker Desktop, or Docker on Linux |
+| [From the command line](#from-the-command-line) | Working on Nexus's code | .NET 10, Node.js 24, MySQL 8.4, and Git |
+
+All three use the same addresses, so run one at a time.
+
+Every way starts from the code at `Pluperfect.Data/Nexus` in a folder of your choice. Clone it with
+`git clone https://github.com/PluperfectData/Nexus.git Pluperfect.Data/Nexus`, or download the ZIP from GitHub
+and extract it there. Put Scry at `Pluperfect.Data/Scry` the same way to set them up together.
+
+### On Windows
+
+Right-click `install.ps1` in the Nexus folder, and choose **Run with PowerShell**. It:
+
+1. installs what's missing (.NET 10, Node.js, MySQL, and Git) through winget, and fetches the two libraries Nexus
+   builds against
+2. asks whether to install Scry too, when it's beside Nexus
+3. builds Nexus, and asks Windows once to trust the certificate for `https://127.0.0.1:6164`, the address providers
+   such as Schwab send people back to
+4. puts a **Nexus** shortcut on the desktop, then starts Nexus with a database server of its own and opens it
+
+The installer page opens at Mail, since Nexus already knows its database and addresses. Then make yourself the
+admin. [Installing on Windows](docs/installing.md) has the detail.
+
+### In Docker
+
+Start Docker Desktop, or Docker on Linux. Then, in the Nexus folder:
+
+- **Windows:** double-click `Nexus Docker.cmd`.
+- **macOS or Linux:** run `sh nexus-docker.sh`.
+
+The launcher fetches the libraries Nexus builds against, and asks whether to start Scry too, linked to Nexus. Then
+it builds and starts Nexus with MySQL beside it, prints the installer's address with its install code, and opens
+Nexus. The first build takes several minutes. [Running Nexus in Docker](docs/docker.md) has the detail.
+
+### From the command line
+
+You'll run the Nexus service and its web client from their code, then set Nexus up in the browser.
+
+#### What you need
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.302 or later
 - [Node.js 24](https://nodejs.org/)
 - [MySQL 8.4](https://dev.mysql.com/downloads/mysql/), with a user that can create Nexus's database
 - [Git](https://git-scm.com/)
 
-### 1. Get the code
+#### 1. Get the code
 
 Nexus builds against two other repositories, which it expects to find beside it. Clone all three into one folder:
 
@@ -110,7 +153,7 @@ your-folder/
 └── Pluperfect.Mail/
 ```
 
-### 2. Build the sign-in library
+#### 2. Build the sign-in library
 
 Nexus's client signs in through Pluperfect.Jwt's client, which is built once:
 
@@ -119,7 +162,7 @@ npm install --prefix Pluperfect.Jwt/client
 npm run build --prefix Pluperfect.Jwt/client
 ```
 
-### 3. Start the service
+#### 3. Start the service
 
 ```bash
 dotnet dev-certs https
@@ -130,7 +173,7 @@ The first line makes the .NET development certificate, if this machine has none 
 `https://127.0.0.1:6164`, the address providers such as Schwab send people back to after they sign in. The service
 itself listens on `http://localhost:6163`.
 
-### 4. Start the client
+#### 4. Start the client
 
 In a second terminal, from the same folder:
 
@@ -139,7 +182,7 @@ npm install --prefix Pluperfect.Data/Nexus/Client
 npm run dev --prefix Pluperfect.Data/Nexus/Client
 ```
 
-### 5. Set it up
+#### 5. Set it up
 
 Open `http://localhost:6165/install`. The installer asks, in turn, for:
 
@@ -195,6 +238,7 @@ packages. [Using the connectors in code](docs/connectors/usage.md) has more exam
 The [documentation](docs/README.md) covers each part in depth, with a contents page to find your way around. Good
 places to start:
 
+- [Installing on Windows](docs/installing.md) and [Running Nexus in Docker](docs/docker.md): the other two ways in
 - [Running Nexus](docs/running.md): the installer, and setting up an instance from another machine
 - [Apps and connect pages](docs/apps-and-connect-pages.md): linking an app, and connecting a source from one
 - [Connectors](docs/connectors/README.md): what each connector reads or writes, and its settings

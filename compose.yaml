@@ -1,0 +1,67 @@
+# Nexus in Docker: the service, its pages, and MySQL, on this computer only, at the addresses development uses.
+# "Nexus Docker.cmd" on Windows or nexus-docker.sh on macOS and Linux builds and starts it. compose.both.yaml runs it
+# beside Scry. Setting NEXUS_VERSION to a release, such as 0.2.0, and running "docker compose pull" uses that
+# release's published images instead of building.
+name: pluperfect-data
+services:
+  nexus-db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: nexus
+      MYSQL_USER: nexus
+      MYSQL_PASSWORD: ${NEXUS_DB_PASSWORD:?The launcher sets NEXUS_DB_PASSWORD in .env; run it first}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - nexus-database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  nexus-api:
+    image: ghcr.io/pluperfectdata/nexus-api:${NEXUS_VERSION:-local}
+    build:
+      context: .
+      target: api
+      additional_contexts:
+        jwt: ../../Pluperfect.Jwt
+        mail: ../../Pluperfect.Mail
+    restart: unless-stopped
+    depends_on:
+      nexus-db:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Nexus: Server=nexus-db;Port=3306;Database=nexus;User ID=nexus;Password=${NEXUS_DB_PASSWORD}
+      Nexus__ClientOrigin: http://localhost:6165
+      Nexus__CallbackOrigin: https://127.0.0.1:6164
+    ports:
+      - "127.0.0.1:6163:6163"
+    volumes:
+      - nexus-data:/data
+
+  nexus-web:
+    image: ghcr.io/pluperfectdata/nexus-web:${NEXUS_VERSION:-local}
+    build:
+      context: .
+      target: web
+      additional_contexts:
+        jwt: ../../Pluperfect.Jwt
+        mail: ../../Pluperfect.Mail
+    restart: unless-stopped
+    depends_on:
+      - nexus-api
+    ports:
+      - "127.0.0.1:6165:6165"
+      - "127.0.0.1:6164:6164"
+    volumes:
+      - nexus-caddy:/data
+
+volumes:
+  nexus-database:
+    name: nexus-database
+  nexus-data:
+    name: nexus-data
+  nexus-caddy:
+    name: nexus-caddy

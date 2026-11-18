@@ -1,0 +1,13 @@
+# The images take the service, the pages, and the Docker Caddyfile. Everything else stays out, above all any data
+# and local settings.
+**
+!Server/**
+!Client/**
+!deploy/docker/**
+Server/tests
+**/bin
+**/obj
+**/node_modules
+**/data
+Client/dist
+**/.env*

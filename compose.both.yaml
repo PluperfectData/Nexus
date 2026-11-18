@@ -1,0 +1,9 @@
+# Nexus and Scry in Docker together, each as its own compose.yaml has it, on one network where Scry reaches Nexus by
+# name. Scry's compose.linked.yaml gives Scry the addresses for that. "Nexus Docker.cmd" or nexus-docker.sh starts
+# this when Scry sits beside Nexus.
+name: pluperfect-data
+include:
+  - compose.yaml
+  - path:
+      - ../Scry/compose.yaml
+      - ../Scry/compose.linked.yaml

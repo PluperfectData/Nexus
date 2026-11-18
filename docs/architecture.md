@@ -23,6 +23,9 @@ records in memory, or piped into a destination.
 | `Server/src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
 | `Server/src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
 | `Client` | The service's pages, a React client: the installer, signing in, workspaces, and for admins, users and settings |
+| `install.ps1`, `start.ts` | The Windows installer, and the script its desktop shortcut runs: [Installing on Windows](installing.md) |
+| `Dockerfile`, `compose.yaml`, `compose.both.yaml`, `deploy/docker` | The Docker images and their services: [Running Nexus in Docker](docker.md) |
+| `Nexus Docker.cmd`, `nexus-docker.sh` | The Docker launchers, for Windows, and for macOS and Linux |
 | `Server/tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
 | `Server/tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
 | `Server/tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |
