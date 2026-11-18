@@ -284,7 +284,7 @@ public sealed class Instance(
 #if DEBUG
     private static readonly bool DebugBuild = true;
 #else
-    private static readonly bool DebugBuild = false;
+    private static readonly bool DebugBuild;
 #endif
 
     /// <summary>

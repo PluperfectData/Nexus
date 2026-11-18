@@ -1,6 +1,6 @@
 # Nexus
 
-[![Build and test](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml)
+[![API](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/ci.yml)
 [![Client](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml/badge.svg)](https://github.com/PluperfectData/Nexus/actions/workflows/client.yml)
 
 Source and destination connectors for .NET 10. A source reads streams of records; a destination writes
