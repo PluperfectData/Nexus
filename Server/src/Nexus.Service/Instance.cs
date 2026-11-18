@@ -282,9 +282,9 @@ public sealed class Instance(
     public bool MailFromNameConfigured => Given(settings.MailFromName) is not null;
 
 #if DEBUG
-    private static readonly bool DebugBuild = true;
+    private static bool DebugBuild => true;
 #else
-    private static readonly bool DebugBuild;
+    private static bool DebugBuild => false;
 #endif
 
     /// <summary>
