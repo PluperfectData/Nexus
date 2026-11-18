@@ -24,8 +24,8 @@ syncs into its own app's destinations.
 | `DELETE /app/key` | Revokes the app's own key, as an app does when it unlinks |
 | `GET /connectors` | The connectors and the settings each asks for, each with `notReady`: why the app's workspace cannot connect it yet, such as a sign-in app it has not set |
 | `POST /connect-sessions` | From `{"connector", "destinationId", "returnUrl"}`, opens a connect page and answers its address. The destination must be the app's, and the return address one an admin added to the app. With `connectionId`, a connection in the app's workspace that signs in, the page signs it in again and returns with `?connection=`. |
-| `GET /syncs` | The app's syncs, each with how its last run went and whether its connection needs a new sign-in |
-| `POST /syncs/{id}/run`, `DELETE /syncs/{id}` | Runs one of the app's syncs now, or removes it |
+| `GET /syncs` | The app's syncs, each with how its last run went and its connection's `signIn`: when it ends, whether that is soon, and whether it has ended |
+| `POST /syncs/{id}/run`, `DELETE /syncs/{id}` | Runs one of the app's syncs now, or removes it. Running one whose connection needs a sign-in answers 409. |
 
 A connect page is for one person, who needs no user in the instance. It lasts 10 minutes, makes one connection
 in the app's workspace, adds the syncs the person picks into the app's destination, and sends them back to the

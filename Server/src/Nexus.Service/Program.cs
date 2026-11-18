@@ -90,6 +90,10 @@ builder.Services.AddHostedService<SyncWorker>();
 builder.Services.AddScoped<Access>();
 builder.Services.AddScoped<ConnectionMaker>();
 builder.Services.AddScoped<SyncMaker>();
+builder.Services.AddScoped<SignInState>();
+builder.Services.AddScoped<SignInMailer>();
+builder.Services.AddScoped<SignInChecks>();
+builder.Services.AddHostedService<SignInWatcher>();
 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();

@@ -126,11 +126,25 @@ public static class LogWords
     /// <summary>"in 5 minutes".</summary>
     public static string After(TimeSpan wait) =>
         wait <= TimeSpan.Zero ? "now"
-        : wait < TimeSpan.FromMinutes(1) ? Count((int)Math.Ceiling(wait.TotalSeconds), "second")
-        : wait < TimeSpan.FromHours(1) ? Count((int)Math.Ceiling(wait.TotalMinutes), "minute")
-        : Count((int)Math.Ceiling(wait.TotalHours), "hour");
+        : wait < TimeSpan.FromMinutes(1) ? "in " + Count((int)Math.Ceiling(wait.TotalSeconds), "second")
+        : wait < TimeSpan.FromHours(1) ? "in " + Count((int)Math.Ceiling(wait.TotalMinutes), "minute")
+        : "in " + Count((int)Math.Ceiling(wait.TotalHours), "hour");
 
-    private static string Count(int count, string unit) => count == 1 ? $"in 1 {unit}" : $"in {count} {unit}s";
+    /// <summary>"1 sync", or "3 syncs".</summary>
+    public static string Count(int count, string unit) => count == 1 ? $"1 {unit}" : $"{count.ToString("N0", CultureInfo.InvariantCulture)} {unit}s";
+
+    /// <summary>"account …1234", or "accounts …1234 and …5678".</summary>
+    public static string Accounts(IReadOnlyList<SignInAccount> accounts) =>
+        (accounts.Count == 1 ? "account " : "accounts ") + List([.. accounts.Select(account => account.Label)]);
+
+    /// <summary>"a", "a and b", or "a, b, and c".</summary>
+    public static string List(IReadOnlyList<string> items) => items.Count switch
+    {
+        0 => string.Empty,
+        1 => items[0],
+        2 => $"{items[0]} and {items[1]}",
+        _ => $"{string.Join(", ", items.Take(items.Count - 1))}, and {items[^1]}",
+    };
 }
 
 /// <summary>Writes each operator log entry to the developer log once it is saved.</summary>

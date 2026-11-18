@@ -105,12 +105,25 @@ public sealed class SignInsController(
                 return await FailedAsync(pending, "The connection this sign-in was for has been removed.", ct);
             }
 
-            await maker.RenewAsync(renewed, tokens, session?.App?.Name, ct);
+            var (accounts, unread) = await maker.IdentifyAsync(renewed, tokens, ct);
+            if ((unread ?? maker.OtherAccountsProblem(renewed, accounts)) is { } refused)
+            {
+                return await FailedAsync(pending, refused, ct);
+            }
+
+            await maker.RenewAsync(renewed, tokens, accounts, session?.App?.Name, ct);
             connection = renewed;
         }
         else
         {
-            connection = await maker.AddSignedInAsync(pending.WorkspaceId, pending.Name!, pending.Connector, pending.Settings!, tokens, session?.App?.Name, ct);
+            var (accounts, unread) = await maker.IdentifyAsync(pending.Connector, pending.WorkspaceId, pending.Settings!, tokens, ct);
+            if (unread is not null)
+            {
+                return await FailedAsync(pending, unread, ct);
+            }
+
+            connection = await maker.AddSignedInAsync(
+                pending.WorkspaceId, pending.Name!, pending.Connector, pending.Settings!, tokens, accounts, session?.App?.Name, ct);
         }
 
         if (session is null)

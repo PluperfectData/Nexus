@@ -87,6 +87,9 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     internal FakePostmark Postmark { get; } = new();
 
+    /// <summary>Connectors the service reads through besides the usual ones, added before the service starts.</summary>
+    internal List<ISourceConnector> MoreConnectors { get; } = [];
+
     /// <summary>The database the service opens, whatever it is told to connect to.</summary>
     internal SqliteDatabaseHost Database { get; }
 
@@ -172,7 +175,10 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
             services.RemoveAll<IDatabaseHost>();
             services.AddSingleton<IDatabaseHost>(Database);
             services.RemoveAll<SourceConnectors>();
-            services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource(), new Nexus.Schwab.SchwabSource(new HttpClient(Schwab))]));
+            services.AddSingleton(new SourceConnectors([Source, new Nexus.Csv.CsvSource(), new Nexus.Schwab.SchwabSource(new HttpClient(Schwab)), .. MoreConnectors]));
+
+            // Tests run the sign-in checks themselves, at the moment they choose.
+            services.Remove(services.Single(d => d.ImplementationType == typeof(SignInWatcher)));
             services.AddHttpClient(OAuthApps.SchwabHttpClient).ConfigurePrimaryHttpMessageHandler(() => Schwab);
             services.AddHttpClient(InstanceMailer.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Postmark);
             services.RemoveAll<HttpRetryOptions>();

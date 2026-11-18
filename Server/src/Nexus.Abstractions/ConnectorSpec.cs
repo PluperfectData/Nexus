@@ -67,6 +67,7 @@ public sealed record OAuthSpec(Uri AuthorizeUrl, Uri TokenUrl, IReadOnlyList<str
 /// <param name="Auth">How the connector authenticates.</param>
 /// <param name="Fields">The settings the host asks for.</param>
 /// <param name="OAuth">The OAuth endpoints, when <paramref name="Auth"/> is <see cref="AuthKind.OAuth"/>.</param>
+/// <param name="SignIn">How long a sign-in lasts, for a connector that signs in; null for one that does not, such as a database.</param>
 public sealed record ConnectorSpec(
     string Id,
     string DisplayName,
@@ -74,4 +75,5 @@ public sealed record ConnectorSpec(
     string Version,
     AuthKind Auth,
     IReadOnlyList<SettingField> Fields,
-    OAuthSpec? OAuth = null);
+    OAuthSpec? OAuth = null,
+    SignInLife? SignIn = null);

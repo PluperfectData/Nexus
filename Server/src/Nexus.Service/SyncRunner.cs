@@ -21,12 +21,16 @@ public sealed partial class SyncRunner(
     OAuthApps apps,
     PushDestination destination,
     Secrets secrets,
+    SignInState signIns,
+    SignInMailer mail,
     RetryPolicy retry,
     TimeProvider time,
     OperatorLog log,
     ILogger<SyncRunner> logger)
 {
     public const string NoDestination = "Its destination was removed. Pick a new one to send it to.";
+
+    public const string SignInEnded = "Its connection needs a new sign-in. Sign in again first.";
 
     public const string Unexpected = "The run stopped on an error the service did not expect. The Log page has the error.";
 
@@ -47,6 +51,14 @@ public sealed partial class SyncRunner(
 
         var run = new Run { SyncId = sync.Id, Attempt = attempt, Status = RunStatus.Running, StartedAt = Now() };
         db.Runs.Add(run);
+        if (sync.Connection!.NeedsSignIn)
+        {
+            Fail(run, ConnectorErrorKind.AuthExpired, SignInEnded);
+            sync.Status = SyncStatus.Failed;
+            log.Warn($"{Named(sync)} did not run: its connection needs a new sign-in.", Place(sync));
+            return await EndAsync(run, null, ct);
+        }
+
         sync.Status = SyncStatus.Running;
         await db.SaveChangesAsync(ct);
 
@@ -55,7 +67,6 @@ public sealed partial class SyncRunner(
             await PushAsync(sync, run, ct);
             run.Status = RunStatus.Succeeded;
             sync.Status = SyncStatus.Ready;
-            sync.Connection!.NeedsSignIn = false;
             log.Info($"{Named(sync)} sent {LogWords.Rows(run.Rows)} from {LogWords.Connection(sync.Connection, connectors)}, stream {sync.Stream}, into {Into(sync)}.", Place(sync));
             return await EndAsync(run, null, ct);
         }
@@ -64,8 +75,7 @@ public sealed partial class SyncRunner(
             var connection = sync.Connection!;
             if (ex.Kind == ConnectorErrorKind.AuthExpired && !connection.NeedsSignIn)
             {
-                connection.NeedsSignIn = true;
-                log.Warn($"{LogWords.Connection(connection, connectors)} needs a new sign-in. Its syncs stop until someone signs in again from the workspace page.", LogPlace.On(connection));
+                signIns.End(connection, Now());
             }
 
             Fail(run, ex.Kind, ex.Message);
@@ -81,7 +91,9 @@ public sealed partial class SyncRunner(
                 log.Error($"{Named(sync)} failed: {ex.Message}", Place(sync));
             }
 
-            return await EndAsync(run, wait, CancellationToken.None);
+            await EndAsync(run, wait, CancellationToken.None);
+            await mail.SendQueuedAsync(CancellationToken.None);
+            return wait;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

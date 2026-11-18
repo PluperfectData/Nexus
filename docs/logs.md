@@ -8,7 +8,7 @@ The service keeps two logs.
 workspace, connection, or sync:
 
 - each run, with the rows it sent or its error, and when it tries again
-- a connector's own warnings, and a connection that needs a new sign-in
+- a connector's own warnings, a sign-in about to end, and a connection that needs a new sign-in
 - each change someone made, with who made it: an email, or `app` and the app's name
 
 An admin sees every entry, and a member sees their own workspaces'. Entries about users, settings, and the

@@ -56,7 +56,9 @@ public static class SchwabSettings
             new SettingField(Movers, "Movers indexes (comma-separated, such as $SPX)", SettingKind.Text, Required: false),
             new SettingField(AllowOrders, "Allow orders", SettingKind.Boolean, Required: false),
         ],
-        OAuth: new OAuthSpec(SchwabApi.AuthorizeUri, SchwabApi.TokenUri, Scopes: []));
+        OAuth: new OAuthSpec(SchwabApi.AuthorizeUri, SchwabApi.TokenUri, Scopes: []),
+        // Schwab's refresh token lasts 7 days from sign-in, and a refresh does not extend it.
+        SignIn: SignInLife.After(TimeSpan.FromDays(7), TimeSpan.FromDays(1)));
 
     internal static CandleSize ReadCandles(ConnectorConfig config)
     {

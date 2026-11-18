@@ -38,7 +38,7 @@ const opened: ConnectView = {
 
 const connected: ConnectView = {
   ...opened,
-  connection: { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, needsSignIn: false, createdAt: '2026-11-15T12:01:00Z' },
+  connection: { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, signIn: null, createdAt: '2026-11-15T12:01:00Z' },
 }
 
 beforeEach(() => {

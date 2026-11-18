@@ -9,6 +9,7 @@ import {
   type Destination,
   editApp,
   editSync,
+  getSignInMail,
   getWorkspace,
   listApps,
   listConnections,
@@ -24,10 +25,14 @@ import {
   replaceConnectionFile,
   runSync,
   saveSignInApp,
+  saveSignInMail,
+  type SignIn,
   type SignInApp,
+  type SignInMail,
   startSignIn,
   type Sync,
 } from '../api'
+import { when } from '../signIn'
 import { leaveFor } from '../browser'
 import { SessionContext } from '../session'
 import { WorkspacesContext } from '../workspace'
@@ -58,13 +63,41 @@ jest.mock('../api', () => ({
   startSignIn: jest.fn(),
   renewSignIn: jest.fn(),
   removeWorkspace: jest.fn(),
+  getSignInMail: jest.fn(),
+  saveSignInMail: jest.fn(),
 }))
 
 jest.mock('../browser', () => ({ leaveFor: jest.fn() }))
 
 const member: Me = { signedIn: true, id: 2, email: 'member@acme.test', isAdmin: false, hasPassword: true }
 
-const shop: Connection = { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, needsSignIn: false, createdAt: '2026-11-15T12:00:00Z' }
+const shop: Connection = { id: 9, name: 'Shop', connector: 'mysql', settings: { host: 'db.test' }, fileName: null, signIn: null, createdAt: '2026-11-15T12:00:00Z' }
+
+const DAY = 86_400_000
+
+// A Schwab sign-in made an hour ago, which Schwab ends 7 days after it started.
+const clock = (): SignIn => ({
+  kind: 'FixedClock',
+  signedInAt: new Date(Date.now() - 3_600_000).toISOString(),
+  endsAt: new Date(Date.now() - 3_600_000 + 7 * DAY).toISOString(),
+  endingSoon: false,
+  ended: false,
+  endedAt: null,
+  keptAliveAt: null,
+  accounts: ['…1234'],
+})
+
+const brokerage = (signIn: SignIn): Connection => ({ ...shop, connector: 'schwab', settings: { startDate: '2026-01-01' }, signIn })
+
+const mailOff: SignInMail = {
+  choice: 'Off',
+  people: [],
+  candidates: [
+    { id: 1, email: 'admin@acme.test', isAdmin: true },
+    { id: 2, email: 'member@acme.test', isAdmin: false },
+  ],
+  mailReady: true,
+}
 
 const scryIngest: Destination = {
   id: 7,
@@ -103,7 +136,7 @@ const orders: Sync = {
   connectionId: 9,
   connectionName: 'Shop',
   connectorName: 'MySQL',
-  needsSignIn: false,
+  signIn: null,
   destinationId: 7,
   destinationUrl: 'http://localhost:6161/ingest',
   appName: 'Scry',
@@ -164,6 +197,7 @@ beforeEach(() => {
   ])
   jest.mocked(listConnections).mockResolvedValue([shop])
   jest.mocked(listSignInApps).mockResolvedValue([])
+  jest.mocked(getSignInMail).mockResolvedValue(mailOff)
   jest.mocked(listApps).mockResolvedValue([scry])
   jest.mocked(listSyncs).mockResolvedValue([orders])
   jest.mocked(listUsers).mockResolvedValue([])
@@ -478,16 +512,76 @@ it('signs in to a provider for a connector that signs in, and says so on coming 
 it('signs a connection in again once its provider ends its sign-in, and shows why one failed', async () => {
   window.history.pushState({}, '', `/workspaces/4?error=${encodeURIComponent('Schwab refused the sign-in (400): Bad code.')}`)
   jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
-  jest.mocked(listConnections).mockResolvedValue([{ ...shop, connector: 'schwab', settings: { startDate: '2026-01-01' }, needsSignIn: true }])
+  const endedAt = '2026-11-25T14:14:00Z'
+  jest.mocked(listConnections).mockResolvedValue([brokerage({ ...clock(), ended: true, endedAt })])
   jest.mocked(renewSignIn).mockResolvedValue({ url: 'https://api.schwabapi.com/v1/oauth/authorize?state=def' })
   renderAs(member)
 
   expect(await screen.findByText('Schwab refused the sign-in (400): Bad code.')).toBeInTheDocument()
   const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+  expect(within(card).getByText(`Its sign-in ended ${when(endedAt)}. Its syncs stop until someone signs in again.`)).toHaveClass('error')
   await userEvent.click(within(card).getByRole('button', { name: 'Sign in again' }))
 
   expect(renewSignIn).toHaveBeenCalledWith(9)
   expect(leaveFor).toHaveBeenCalledWith('https://api.schwabapi.com/v1/oauth/authorize?state=def')
+})
+
+it("shows when a fixed clock ends a sign-in and the accounts it reads, offering Sign in again early", async () => {
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  const signIn = clock()
+  jest.mocked(listConnections).mockResolvedValue([brokerage(signIn)])
+  renderAs(member)
+
+  const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+
+  expect(within(card).getByText(`Signed in ${when(signIn.signedInAt!)}. Charles Schwab ends it ${when(signIn.endsAt!)}, in 7 days.`)).toHaveClass('muted')
+  expect(within(card).getByText('Reads the account …1234.')).toBeInTheDocument()
+  expect(within(card).getByRole('button', { name: 'Sign in again' })).toBeInTheDocument()
+})
+
+it('warns once a fixed clock is about to end', async () => {
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  const endsAt = new Date(Date.now() + 3 * 3_600_000).toISOString()
+  jest.mocked(listConnections).mockResolvedValue([brokerage({ ...clock(), endsAt, endingSoon: true })])
+  renderAs(member)
+
+  const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+
+  expect(
+    within(card).getByText(`Its sign-in ends soon: Charles Schwab ends it ${when(endsAt)}, in 3 hours. Sign in again to start its clock over.`),
+  ).toHaveClass('warning')
+})
+
+it('offers no sign-in to a connection that does not sign in', async () => {
+  renderAs(member)
+
+  const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+
+  expect(within(card).queryByText(/Signed in/)).not.toBeInTheDocument()
+  expect(within(card).queryByRole('button', { name: 'Sign in again' })).not.toBeInTheDocument()
+})
+
+it('sets who is mailed about the sign-ins, picking people among the members and admins', async () => {
+  jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
+  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
+  jest.mocked(saveSignInMail).mockResolvedValue({ ...mailOff, choice: 'Named', people: [2] })
+  renderAs(member)
+
+  await userEvent.click(await screen.findByRole('radio', { name: 'People I pick' }))
+  await userEvent.click(screen.getByRole('checkbox', { name: 'member@acme.test' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(saveSignInMail).toHaveBeenCalledWith(4, 'Named', [2])
+  expect(await screen.findByText('Saved.')).toBeInTheDocument()
+  expect(screen.getByRole('radio', { name: 'People I pick' })).toBeChecked()
+})
+
+it('says nothing is mailed on an instance without mail', async () => {
+  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
+  jest.mocked(getSignInMail).mockResolvedValue({ ...mailOff, mailReady: false })
+  renderAs(member)
+
+  expect(await screen.findByText('This instance has no mail set up, so nothing is sent. An admin sets it up on the Settings page.')).toBeInTheDocument()
 })
 
 it('remembers the workspace for the next visit to /, and links back to the Workspaces page', async () => {

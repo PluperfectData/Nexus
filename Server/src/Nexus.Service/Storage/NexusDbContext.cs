@@ -44,8 +44,18 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
 
     public DbSet<LogEntry> LogEntries => Set<LogEntry>();
 
+    public DbSet<SignInMailPerson> SignInMailPeople => Set<SignInMailPerson>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<SignInMailPerson>(person =>
+        {
+            person.ToTable("sign_in_mail_people");
+            person.HasKey(p => new { p.WorkspaceId, p.UserId });
+            person.HasOne(p => p.Workspace).WithMany().HasForeignKey(p => p.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
+            person.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<LogEntry>(entry =>
         {
             entry.ToTable("log_entries");
@@ -153,6 +163,7 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
         {
             workspace.ToTable("workspaces");
             workspace.Property(w => w.Name).HasMaxLength(Workspace.MaxNameLength);
+            workspace.Property(w => w.SignInMail).HasConversion<string>().HasMaxLength(16);
             workspace.Property(w => w.CreatedAt).HasConversion(Utc);
         });
 
@@ -187,6 +198,12 @@ public sealed class NexusDbContext(DbContextOptions<NexusDbContext> options) : D
             connection.Property(c => c.Connector).HasMaxLength(32);
             connection.Property(c => c.FileName).HasMaxLength(255);
             connection.Property(c => c.StoredFile).HasMaxLength(64);
+            connection.Property(c => c.SignedInAt).HasConversion(NullableUtc);
+            connection.Property(c => c.SignInEndsAt).HasConversion(NullableUtc);
+            connection.Property(c => c.SignInWarnedAt).HasConversion(NullableUtc);
+            connection.Property(c => c.SignInEndedAt).HasConversion(NullableUtc);
+            connection.Property(c => c.KeptAliveAt).HasConversion(NullableUtc);
+            connection.Property(c => c.Accounts).HasMaxLength(4000);
             connection.Property(c => c.CreatedAt).HasConversion(Utc);
             connection.HasOne(c => c.Workspace).WithMany().HasForeignKey(c => c.WorkspaceId).OnDelete(DeleteBehavior.Cascade);
         });

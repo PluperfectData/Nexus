@@ -6,7 +6,8 @@ namespace Nexus.Service.Controllers;
 
 /// <summary>
 /// A connection with the settings it is safe to show: every one but its secrets. <paramref name="FileName"/> names the
-/// file a connector such as CSV reads.
+/// file a connector such as CSV reads, and <paramref name="SignIn"/> is its sign-in, null for a connector that does not
+/// sign in.
 /// </summary>
 public sealed record ConnectionView(
     int Id,
@@ -14,8 +15,24 @@ public sealed record ConnectionView(
     string Connector,
     IReadOnlyDictionary<string, string?> Settings,
     string? FileName,
-    bool NeedsSignIn,
+    SignInView? SignIn,
     DateTime CreatedAt);
+
+/// <summary>
+/// A connection's sign-in to its provider. <paramref name="EndsAt"/> is when a fixed clock ends it, and
+/// <paramref name="EndingSoon"/> whether that is within the connector's warning. <paramref name="Ended"/> means its
+/// syncs stop until someone signs in again. <paramref name="KeptAliveAt"/> is when a session that ends without calls
+/// last answered one, and <paramref name="Accounts"/> labels the accounts it reaches.
+/// </summary>
+public sealed record SignInView(
+    SignInKind Kind,
+    DateTime? SignedInAt,
+    DateTime? EndsAt,
+    bool EndingSoon,
+    bool Ended,
+    DateTime? EndedAt,
+    DateTime? KeptAliveAt,
+    IReadOnlyList<string> Accounts);
 
 public sealed record ConnectionRequest(string? Name, string? Connector, IReadOnlyDictionary<string, string?>? Settings);
 

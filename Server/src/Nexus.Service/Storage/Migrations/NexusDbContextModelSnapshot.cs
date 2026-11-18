@@ -132,6 +132,10 @@ namespace Nexus.Service.Storage.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Accounts")
+                        .HasMaxLength(4000)
+                        .HasColumnType("varchar(4000)");
+
                     b.Property<string>("Connector")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -144,6 +148,9 @@ namespace Nexus.Service.Storage.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)");
 
+                    b.Property<DateTime?>("KeptAliveAt")
+                        .HasColumnType("datetime(6)");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -155,6 +162,18 @@ namespace Nexus.Service.Storage.Migrations
                     b.Property<string>("Settings")
                         .IsRequired()
                         .HasColumnType("longtext");
+
+                    b.Property<DateTime?>("SignInEndedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("SignInEndsAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("SignInWarnedAt")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime?>("SignedInAt")
+                        .HasColumnType("datetime(6)");
 
                     b.Property<string>("StoredFile")
                         .HasMaxLength(64)
@@ -471,6 +490,21 @@ namespace Nexus.Service.Storage.Migrations
                     b.ToTable("runs", (string)null);
                 });
 
+            modelBuilder.Entity("Nexus.Service.Storage.SignInMailPerson", b =>
+                {
+                    b.Property<int>("WorkspaceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("WorkspaceId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("sign_in_mail_people", (string)null);
+                });
+
             modelBuilder.Entity("Nexus.Service.Storage.StoredSignIn", b =>
                 {
                     b.Property<long>("Id")
@@ -638,6 +672,11 @@ namespace Nexus.Service.Storage.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)");
 
+                    b.Property<string>("SignInMail")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("varchar(16)");
+
                     b.HasKey("Id");
 
                     b.ToTable("workspaces", (string)null);
@@ -761,6 +800,25 @@ namespace Nexus.Service.Storage.Migrations
                         .IsRequired();
 
                     b.Navigation("Sync");
+                });
+
+            modelBuilder.Entity("Nexus.Service.Storage.SignInMailPerson", b =>
+                {
+                    b.HasOne("Nexus.Service.Storage.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Nexus.Service.Storage.Workspace", "Workspace")
+                        .WithMany()
+                        .HasForeignKey("WorkspaceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+
+                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("Nexus.Service.Storage.StoredSignIn", b =>

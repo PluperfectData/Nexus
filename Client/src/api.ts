@@ -161,6 +161,24 @@ export interface SignInApp {
   problem: string | null
 }
 
+/** How a connector's sign-in ends: never on its own, on a clock the provider sets, or without calls that keep it alive. */
+export type SignInKind = 'Lasting' | 'FixedClock' | 'KeptAlive'
+
+/**
+ * A connection's sign-in. `endsAt` is when a fixed clock ends it, and `endingSoon` whether that is within the connector's
+ * warning. Once `ended`, its syncs stop until someone signs in again. `accounts` labels the accounts it reaches.
+ */
+export interface SignIn {
+  kind: SignInKind
+  signedInAt: string | null
+  endsAt: string | null
+  endingSoon: boolean
+  ended: boolean
+  endedAt: string | null
+  keptAliveAt: string | null
+  accounts: string[]
+}
+
 export interface Connection {
   id: number
   name: string
@@ -168,8 +186,19 @@ export interface Connection {
   settings: Record<string, string | null>
   /** The file a connector such as CSV reads, by the name it was uploaded with. */
   fileName: string | null
-  needsSignIn: boolean
+  /** Null for a connector that does not sign in. */
+  signIn: SignIn | null
   createdAt: string
+}
+
+export type SignInMailChoice = 'Off' | 'Everyone' | 'Admins' | 'Named'
+
+/** Who a workspace mails about its sign-ins. `people` are those named, among `candidates`: its members and the admins. */
+export interface SignInMail {
+  choice: SignInMailChoice
+  people: number[]
+  candidates: { id: number; email: string; isAdmin: boolean }[]
+  mailReady: boolean
 }
 
 export type SyncMode = 'FullRefresh' | 'Incremental'
@@ -199,7 +228,7 @@ export interface Sync {
   connectionId: number
   connectionName: string
   connectorName: string
-  needsSignIn: boolean
+  signIn: SignIn | null
   destinationId: number | null
   destinationUrl: string | null
   appName: string | null
@@ -279,8 +308,12 @@ export function replaceConnectionFile(id: number, file: File) {
 export const startSignIn = (workspaceId: number, name: string, connector: string, settings: Record<string, string>) =>
   request<{ url: string }>(`/workspaces/${workspaceId}/sign-ins`, 'POST', { name, connector, settings })
 
-/** Starts a new sign-in for a connection whose provider ended its last one. */
+/** Starts a new sign-in for a connection, which starts its clock over. */
 export const renewSignIn = (id: number) => request<{ url: string }>(`/connections/${id}/sign-in`, 'POST')
+
+export const getSignInMail = (workspaceId: number) => request<SignInMail>(`/workspaces/${workspaceId}/sign-in-mail`)
+export const saveSignInMail = (workspaceId: number, choice: SignInMailChoice, people: number[]) =>
+  request<SignInMail>(`/workspaces/${workspaceId}/sign-in-mail`, 'PUT', { choice, people })
 
 export const removeConnection = (id: number) => request<null>(`/connections/${id}`, 'DELETE')
 

@@ -20,7 +20,10 @@ spec is `SchwabSource.Spec`.
   callback and a `state`, and `SchwabSignIn.ExchangeAsync` trades the redirect's code for `OAuthTokens`, sending it
   once. A refused code throws `AuthExpired`, and a refused app key `ConfigInvalid`.
 - The access token is refreshed with 5 minutes or less left, and on a 401, using HTTP Basic auth with the app
-  key and secret. Schwab ends a sign-in after 7 days; the refresh then throws `AuthExpired`.
+  key and secret. Schwab ends a sign-in after 7 days; the refresh then throws `AuthExpired`. Its `SignInLife` is a
+  fixed clock of 7 days, warned a day ahead.
+- `IdentifyAsync` names each account linked to the sign-in, from `GET /accounts/accountNumbers`: by a SHA-256 hash of
+  its account number, and labeled with its last four digits, as `…1234`.
 - Every account linked to the sign-in is read. Requests address an account by the hash from
   `GET /accounts/accountNumbers`; rows carry the plain `account_number`.
 

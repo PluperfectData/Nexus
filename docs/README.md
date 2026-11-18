@@ -22,6 +22,7 @@ Nexus is and get it running, start with the [README](../README.md).
 
 - **[Connectors](connectors/README.md)**: what each connector reads or writes
 - **[The connector contract](connectors/contract.md)**: the interfaces, column types, errors, secrets, files, and retries every connector shares
+  - [Sign-ins](connectors/contract.md#sign-ins)
   - [Actions](connectors/contract.md#actions)
   - [Column types](connectors/contract.md#column-types)
   - [Errors](connectors/contract.md#errors)

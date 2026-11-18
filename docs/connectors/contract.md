@@ -8,7 +8,8 @@
 | `IDestinationConnector` | `Spec`, `CheckAsync`, `WriteAsync` |
 
 `Spec` is a `ConnectorSpec`: `Id`, `DisplayName`, a one-sentence `Description` a host can show beside the name,
-`Version`, `Auth`, the settings `Fields`, and `OAuth` endpoints when it signs in that way.
+`Version`, `Auth`, the settings `Fields`, `OAuth` endpoints when it signs in that way, and `SignIn`, how long a
+sign-in lasts, for a connector that signs in.
 
 `ReadAsync` yields:
 
@@ -24,6 +25,26 @@
 - Write modes: `Overwrite`, `Append`, `Upsert` by primary key.
 - `WriteAsync` yields a `StateCheckpoint` only after every preceding record is committed. Persist only
   those.
+
+## Sign-ins
+
+A connector that signs in declares how its sign-in ends, as a `SignInLife` of one of three kinds:
+
+| `SignInKind` | Made by | Means |
+|---|---|---|
+| `Lasting` | `SignInLife.Lasting` | It lasts until it is revoked: a refresh token that renews as it is used, or an API key. |
+| `FixedClock` | `SignInLife.After(lifetime, warnBefore)`, or `SignInLife.DailyAt(time, timeZoneId, warnBefore)` | The provider ends it a set time after it starts, or at a time of day. `EndsAt(signedInAt)` works out when, across daylight saving changes, and the host warns `warnBefore` that. |
+| `KeptAlive` | `SignInLife.KeptAliveFor(idleTimeout, keepAliveEvery)` | The session ends after `idleTimeout` without a call, so the host calls it every `keepAliveEvery`. |
+
+A fixed clock whose session also goes idle adds `AndKeptAlive(idleTimeout, keepAliveEvery)`.
+
+Two interfaces go with it:
+
+- `IKeepsSignInAlive.KeepAliveAsync(config)` keeps a session alive and answers how long it has left, or null when the
+  provider does not say. It throws `AuthExpired` once the session has ended.
+- `IIdentifiesSignIn.IdentifyAsync(config)` answers the accounts a sign-in reaches, each a `SignInAccount` with an
+  `Id` that stays the same across sign-ins and a short `Label`, such as `…1234`. A host compares them to tell whether a
+  new sign-in reaches the same accounts.
 
 ## Actions
 

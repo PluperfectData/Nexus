@@ -26,6 +26,24 @@ public sealed class Connection
     /// <summary>Whether the provider ended the sign-in, so the connection needs a new one before it syncs.</summary>
     public bool NeedsSignIn { get; set; }
 
+    /// <summary>When the connection last signed in to its provider.</summary>
+    public DateTime? SignedInAt { get; set; }
+
+    /// <summary>When the provider ends that sign-in, for a connector whose sign-in runs on a fixed clock.</summary>
+    public DateTime? SignInEndsAt { get; set; }
+
+    /// <summary>When the warning that the sign-in ends soon was given; once for each sign-in.</summary>
+    public DateTime? SignInWarnedAt { get; set; }
+
+    /// <summary>When the sign-in ended, which is when <see cref="NeedsSignIn"/> was set.</summary>
+    public DateTime? SignInEndedAt { get; set; }
+
+    /// <summary>When a session that ends without calls last answered one.</summary>
+    public DateTime? KeptAliveAt { get; set; }
+
+    /// <summary>The accounts the sign-in reaches, as JSON of the connector's <see cref="SignInAccount"/>s.</summary>
+    public string? Accounts { get; set; }
+
     /// <summary>The uploaded file's own name, for a connector that reads a file, such as CSV.</summary>
     public string? FileName { get; set; }
 

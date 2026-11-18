@@ -4,7 +4,9 @@ import { addConnection, type App, type Connection, type Connector, startSignIn, 
 import { leaveFor } from '../browser'
 import { placesOf } from '../places'
 import { defaultsOf } from '../fields'
+import { offersSignIn } from '../signIn'
 import { FieldInput } from './FieldInput'
+import { SignInStatus } from './SignInStatus'
 
 /** A button that picks a new copy of the file a connection reads. */
 function ReplaceFile({ connection, onPick }: { connection: Connection; onPick: (file: File) => void }) {
@@ -195,10 +197,10 @@ export function ConnectionsSection({
                       .map(([key, value]) => `, ${key} ${value}`)
                       .join('')}
                   </p>
-                  {connection.needsSignIn && <p className="error">It needs a new sign-in.</p>}
+                  {connection.signIn && <SignInStatus signIn={connection.signIn} provider={nameOf(connection.connector)} />}
                 </div>
                 <div className="row-actions">
-                  {connection.needsSignIn && (
+                  {offersSignIn(connection.signIn) && (
                     <button type="button" className="secondary" onClick={() => onSignInAgain(connection)}>
                       Sign in again
                     </button>

@@ -15,6 +15,8 @@ public sealed class ConnectionMaker(
     ConnectionFiles files,
     OAuthApps apps,
     Secrets secrets,
+    SignInState signIns,
+    PendingRuns queue,
     OperatorLog log,
     TimeProvider time)
 {
@@ -69,13 +71,17 @@ public sealed class ConnectionMaker(
             : (trimmed, settings, problem ?? await apps.ProblemForAsync(connector.Spec.Id, workspaceId, ct));
     }
 
-    /// <summary>Keeps a connection signed in to its provider, with the tokens the sign-in brought back.</summary>
+    /// <summary>
+    /// Keeps a connection signed in to its provider, with the tokens the sign-in brought back and the accounts it
+    /// reaches, which are null for a connector that does not say.
+    /// </summary>
     public async Task<Connection> AddSignedInAsync(
         int workspaceId,
         string name,
         string connectorId,
         IReadOnlyDictionary<string, string?> settings,
         OAuthTokens tokens,
+        IReadOnlyList<SignInAccount>? accounts,
         string? connectPageApp,
         CancellationToken ct)
     {
@@ -88,25 +94,76 @@ public sealed class ConnectionMaker(
             Tokens = secrets.ProtectTokens(tokens),
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
+        signIns.Record(connection, accounts);
         db.Connections.Add(connection);
+        var reads = accounts is null ? string.Empty : $", reading {LogWords.Accounts(accounts)}";
         log.Info(
-            $"Connection {LogWords.Connection(connection, connectors)} was signed in and added{LogWords.OnConnectPage(connectPageApp)}.",
+            $"Connection {LogWords.Connection(connection, connectors)} was signed in and added{reads}{LogWords.OnConnectPage(connectPageApp)}.",
             LogPlace.On(connection),
             LogWords.ConnectPageActor(connectPageApp));
         await db.SaveChangesAsync(ct);
         return connection;
     }
 
-    /// <summary>Keeps the tokens a new sign-in brought back, so the connection syncs again.</summary>
-    public async Task RenewAsync(Connection connection, OAuthTokens tokens, string? connectPageApp, CancellationToken ct)
+    /// <summary>
+    /// Keeps the tokens a new sign-in brought back, which starts its clock over, and runs again each of its syncs that
+    /// stopped for the sign-in.
+    /// </summary>
+    public async Task RenewAsync(Connection connection, OAuthTokens tokens, IReadOnlyList<SignInAccount>? accounts, string? connectPageApp, CancellationToken ct)
     {
+        var changed = accounts is null ? string.Empty : AccountChanges(SignInState.AccountsOf(connection), accounts);
         connection.Tokens = secrets.ProtectTokens(tokens);
-        connection.NeedsSignIn = false;
+        signIns.Record(connection, accounts);
+        var stopped = await StoppedForSignInAsync(connection, ct);
+        foreach (var sync in stopped)
+        {
+            sync.Status = SyncStatus.Queued;
+        }
+
+        var rerun = stopped.Count == 0 ? string.Empty
+            : $" {LogWords.Count(stopped.Count, "sync")} that stopped for it {(stopped.Count == 1 ? "runs" : "run")} again.";
         log.Info(
-            $"Connection {LogWords.Connection(connection, connectors)} was signed in again{LogWords.OnConnectPage(connectPageApp)}.",
+            $"Connection {LogWords.Connection(connection, connectors)} was signed in again{LogWords.OnConnectPage(connectPageApp)}.{changed}{rerun}",
             LogPlace.On(connection),
             LogWords.ConnectPageActor(connectPageApp));
         await db.SaveChangesAsync(ct);
+        foreach (var sync in stopped)
+        {
+            queue.Enqueue(new PendingRun(sync.Id, 1));
+        }
+    }
+
+    /// <summary>
+    /// The accounts a sign-in into <paramref name="connectorId"/> reaches, null for a connector that does not say, or
+    /// why they could not be read.
+    /// </summary>
+    public async Task<(IReadOnlyList<SignInAccount>? Accounts, string? Problem)> IdentifyAsync(
+        string connectorId,
+        int workspaceId,
+        IReadOnlyDictionary<string, string?> settings,
+        OAuthTokens tokens,
+        CancellationToken ct) =>
+        await IdentifyAsync(
+            connectorId,
+            async () => new ConnectorConfig(settings, Tokens: tokens, Client: await apps.ClientForAsync(connectorId, workspaceId, ct)),
+            ct);
+
+    /// <summary>The accounts a new sign-in of <paramref name="connection"/> reaches, as the overload above.</summary>
+    public async Task<(IReadOnlyList<SignInAccount>? Accounts, string? Problem)> IdentifyAsync(Connection connection, OAuthTokens tokens, CancellationToken ct) =>
+        await IdentifyAsync(connection.Connector, async () => await ConfigOfAsync(connection, ct) with { Tokens = tokens }, ct);
+
+    /// <summary>Why a new sign-in that reaches <paramref name="accounts"/> cannot renew the connection: it shares none of its accounts.</summary>
+    public string? OtherAccountsProblem(Connection connection, IReadOnlyList<SignInAccount>? accounts)
+    {
+        var before = SignInState.AccountsOf(connection);
+        if (accounts is null || before.Count == 0 || accounts.Any(account => before.Any(old => old.Id == account.Id)))
+        {
+            return null;
+        }
+
+        var provider = connectors.Find(connection.Connector)?.Spec.DisplayName ?? connection.Connector;
+        var reached = accounts.Count == 0 ? "no account" : LogWords.Accounts(accounts);
+        return $"This sign-in reached {reached}, and this connection reads {LogWords.Accounts(before)}. Sign in to the same {provider} login, or add a new connection.";
     }
 
     /// <summary>
@@ -149,7 +206,7 @@ public sealed class ConnectionMaker(
             .Where(setting => shown.Contains(setting.Key))
             .ToDictionary(setting => setting.Key, setting => setting.Value);
         return new ConnectionView(
-            connection.Id, connection.Name, connection.Connector, settings, connection.FileName, connection.NeedsSignIn, connection.CreatedAt);
+            connection.Id, connection.Name, connection.Connector, settings, connection.FileName, signIns.ViewOf(connection), connection.CreatedAt);
     }
 
     /// <summary>The streams the connection's source offers now.</summary>
@@ -257,6 +314,47 @@ public sealed class ConnectionMaker(
             field => given.TryGetValue(field.Name, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null);
         var missing = fields.FirstOrDefault(field => field.Required && settings[field.Name] is null);
         return (connector, trimmed, settings, missing is null ? null : $"{missing.Label} is required.");
+    }
+
+    private async Task<(IReadOnlyList<SignInAccount>? Accounts, string? Problem)> IdentifyAsync(
+        string connectorId,
+        Func<Task<ConnectorConfig>> config,
+        CancellationToken ct)
+    {
+        if (connectors.Find(connectorId) is not IIdentifiesSignIn identifies)
+        {
+            return (null, null);
+        }
+
+        try
+        {
+            return (await identifies.IdentifyAsync(await config(), ct), null);
+        }
+        catch (ConnectorException ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    private static string AccountChanges(IReadOnlyList<SignInAccount> before, IReadOnlyList<SignInAccount> after)
+    {
+        var added = after.Where(account => before.All(old => old.Id != account.Id)).ToList();
+        var gone = before.Where(old => after.All(account => account.Id != old.Id)).ToList();
+        return (added.Count == 0 ? string.Empty : $" It now reads {LogWords.Accounts(added)} too.")
+            + (gone.Count == 0 ? string.Empty : $" It no longer reads {LogWords.Accounts(gone)}.");
+    }
+
+    // The connection's syncs whose last run failed because the sign-in had ended, and that still have a destination.
+    private async Task<List<Sync>> StoppedForSignInAsync(Connection connection, CancellationToken ct)
+    {
+        var failed = await db.Syncs
+            .Where(s => s.ConnectionId == connection.Id && s.Status == SyncStatus.Failed && s.DestinationId != null)
+            .ToListAsync(ct);
+        var ids = failed.Select(s => s.Id).ToList();
+        var lastKinds = (await db.Runs.Where(r => ids.Contains(r.SyncId)).ToListAsync(ct))
+            .GroupBy(r => r.SyncId)
+            .ToDictionary(g => g.Key, g => g.MaxBy(r => r.Id)!.ErrorKind);
+        return [.. failed.Where(s => lastKinds.GetValueOrDefault(s.Id) == ConnectorErrorKind.AuthExpired)];
     }
 
     private Dictionary<string, ConnectorFile>? FilesOf(ISourceConnector? connector, string? fileName, string? stored) =>

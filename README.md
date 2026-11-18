@@ -50,7 +50,10 @@ its users to Nexus's connect page to link a source, and receives the rows throug
   past a cursor column, such as `updated_at`, and resumes from its last checkpoint. A failed run tries again after 1,
   5, and 15 minutes.
 - **Sign in to providers in the browser.** A Schwab connection is made by signing in at Schwab. Each workspace signs in
-  through its own app at the provider, and Nexus marks a connection whose sign-in has ended.
+  through its own app at the provider.
+- **Sign-ins that end, said ahead of time.** Some providers end a sign-in on a clock, such as Schwab after 7 days.
+  Nexus shows when, warns a day ahead in the Log and by mail to the people you pick, and signing in again early starts
+  the clock over. A renewal into a different account is refused.
 - **Pair an app with one approval.** An app asks to link, a Nexus admin approves it into a workspace, and no keys are
   copied by hand.
 - **Connect pages.** An app sends a person to Nexus's connect page to link a source. They don't need a Nexus account,

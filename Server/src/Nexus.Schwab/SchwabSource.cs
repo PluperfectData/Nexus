@@ -1,12 +1,14 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace Nexus.Schwab;
 
 /// <summary>Reads balances, positions, transactions, and orders from every account linked to a Schwab sign-in.</summary>
-public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider = null) : ISourceConnector
+public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider = null) : ISourceConnector, IIdentifiesSignIn
 {
     /// <summary>A snapshot of each account's balances, appended on every read.</summary>
     public const string BalancesStream = "balances";
@@ -89,6 +91,20 @@ public sealed class SchwabSource(HttpClient client, TimeProvider? timeProvider =
         {
             return CheckResult.Failure(ex.Kind, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Every account linked to the sign-in, each by a hash of its account number, which stays the same across sign-ins,
+    /// and labeled with its last four digits, as <c>…1234</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<SignInAccount>> IdentifyAsync(ConnectorConfig config, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        var accounts = await new SchwabApi(_client, _time, config).AccountsAsync(ct).ConfigureAwait(false);
+        return [.. accounts.Select(account => new SignInAccount(
+            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(account.Number))),
+            "…" + account.Number[Math.Max(0, account.Number.Length - 4)..]))];
     }
 
     /// <inheritdoc />

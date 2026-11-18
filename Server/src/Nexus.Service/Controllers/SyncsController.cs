@@ -9,17 +9,17 @@ namespace Nexus.Service.Controllers;
 public sealed record RunView(long Id, int Attempt, RunStatus Status, DateTime StartedAt, DateTime? EndedAt, long Rows, ConnectorErrorKind? ErrorKind, string? Error);
 
 /// <summary>
-/// A sync, where it reads and where it writes, and how its last run went. <paramref name="NeedsSignIn"/> says its
-/// connection needs a new sign-in. The destination's fields are null once its destination is removed, and
-/// <paramref name="DestinationKeyName"/> and <paramref name="DestinationKeyPrefix"/> name the push key as the push
-/// API last reported it.
+/// A sync, where it reads and where it writes, and how its last run went. <paramref name="SignIn"/> is its connection's
+/// sign-in, null for a connector that does not sign in. The destination's fields are null once its destination is
+/// removed, and <paramref name="DestinationKeyName"/> and <paramref name="DestinationKeyPrefix"/> name the push key as
+/// the push API last reported it.
 /// </summary>
 public sealed record SyncView(
     int Id,
     int ConnectionId,
     string ConnectionName,
     string ConnectorName,
-    bool NeedsSignIn,
+    SignInView? SignIn,
     int? DestinationId,
     string? DestinationUrl,
     string? AppName,
@@ -49,6 +49,7 @@ public sealed class SyncsController(
     Access access,
     SyncMaker maker,
     SourceConnectors connectors,
+    SignInState signIns,
     PendingRuns queue,
     OperatorLog log) : ControllerBase
 {
@@ -114,6 +115,11 @@ public sealed class SyncsController(
         if (sync.Status is SyncStatus.Queued or SyncStatus.Running)
         {
             return Problem("This sync is already queued or running.", statusCode: StatusCodes.Status409Conflict);
+        }
+
+        if (sync.Connection!.NeedsSignIn)
+        {
+            return Problem(SyncRunner.SignInEnded, statusCode: StatusCodes.Status409Conflict);
         }
 
         sync.Status = SyncStatus.Queued;
@@ -231,7 +237,7 @@ public sealed class SyncsController(
             sync.ConnectionId,
             connection.Name,
             connectors.Find(connection.Connector)?.Spec.DisplayName ?? connection.Connector,
-            connection.NeedsSignIn,
+            signIns.ViewOf(connection),
             sync.DestinationId,
             destination?.Url,
             destination?.App?.Name,

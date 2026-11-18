@@ -25,6 +25,7 @@ import { AppsSection } from '../components/AppsSection'
 import { ConnectionsSection } from '../components/ConnectionsSection'
 import { MembersSection } from '../components/MembersSection'
 import { SignInAppsSection } from '../components/SignInAppsSection'
+import { SignInMailSection } from '../components/SignInMailSection'
 import { leaveFor } from '../browser'
 import { arrivalQuery, clearQuery } from '../query'
 import { useSession } from '../session'
@@ -156,6 +157,8 @@ export function WorkspacePage() {
       />
 
       <SignInAppsSection workspaceId={workspace.id} apps={signInApps} onChange={setSignInApps} />
+
+      {signInApps.length > 0 && <SignInMailSection workspaceId={workspace.id} />}
 
       <AppsSection
         workspaceId={workspace.id}
