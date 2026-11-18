@@ -100,6 +100,17 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     /// <summary>The service's secrets, from the same keys, usable before the service starts.</summary>
     public Secrets NewSecrets() => new(NewProtection());
 
+    /// <summary>The sender an instance from <see cref="WithPostmark"/> mails from.</summary>
+    public const string MailSender = "nexus@acme.test";
+
+    /// <summary>An installed factory whose mail goes through <see cref="Postmark"/> from the start, as a Release build's does.</summary>
+    public static ServiceFactory WithPostmark()
+    {
+        var factory = new ServiceFactory(mailToFiles: false);
+        factory.NewInstanceFile().SaveMail(FakePostmark.Token, MailSender, Instance.DefaultSenderName);
+        return factory;
+    }
+
     /// <summary>The service's stored settings, from the same file and keys, usable before the service starts.</summary>
     public InstanceFile NewInstanceFile() => new(DataDirectory, NewProtection());
 

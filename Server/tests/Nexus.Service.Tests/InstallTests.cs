@@ -280,6 +280,7 @@ public sealed partial class InstallTests
         made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
     }
 
+#if DEBUG
     [Test]
     public async Task With_mail_written_to_files_the_first_admin_needs_no_password_and_signs_in_by_link()
     {
@@ -302,11 +303,12 @@ public sealed partial class InstallTests
         redeemed.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await later.GetAsync<JsonElement>("/auth/me")).GetProperty("email").GetString().ShouldBe("founder@acme.test");
     }
+#endif
 
     [Test]
     public async Task Make_an_admin_with_no_password_keeps_the_users_own()
     {
-        using var factory = new ServiceFactory();
+        using var factory = ServiceFactory.WithPostmark();
         await factory.AddUserAsync("rowan@acme.test", Browser.Password);
         using var browser = factory.NewBrowser();
 

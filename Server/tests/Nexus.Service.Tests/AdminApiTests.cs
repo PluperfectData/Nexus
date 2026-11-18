@@ -57,16 +57,17 @@ public sealed class AdminApiTests
     [Test]
     public async Task Invites_a_user_by_mail()
     {
-        using var admin = await _factory.SignedInAsync(Admin, admin: true);
+        using var factory = ServiceFactory.WithPostmark();
+        using var admin = await factory.SignedInAsync(Admin, admin: true);
 
         var invited = await admin.SendAsync<JsonElement>(HttpMethod.Post, "/users", new { email = "New@Acme.test", isAdmin = false });
 
         invited.GetProperty("user").GetProperty("email").GetString().ShouldBe("new@acme.test");
         invited.GetProperty("user").GetProperty("hasPassword").GetBoolean().ShouldBeFalse();
         invited.GetProperty("link").ValueKind.ShouldBe(JsonValueKind.Null);
-        var mail = Browser.MailTo(_factory.MailDirectory, "new@acme.test").Single();
-        mail.Subject.ShouldBe("You're invited to Nexus");
-        using var newcomer = _factory.NewBrowser();
+        var mail = Browser.PostmarkTo(factory.Postmark, "new@acme.test").Single();
+        mail.GetProperty("Subject").GetString().ShouldBe("You're invited to Nexus");
+        using var newcomer = factory.NewBrowser();
         (await newcomer.SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token = Browser.LinkToken(mail) })).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await admin.SendAsync(HttpMethod.Post, "/users", new { email = "new@acme.test" })).StatusCode.ShouldBe(HttpStatusCode.Conflict);
     }

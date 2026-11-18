@@ -115,6 +115,7 @@ public sealed class SettingsTests
         return response.Headers.TryGetValues("Access-Control-Allow-Origin", out var values) ? values.Single() : null;
     }
 
+#if DEBUG
     [Test]
     public async Task A_saved_Postmark_token_wins_over_mail_files_and_turning_it_off_returns_to_them()
     {
@@ -134,6 +135,7 @@ public sealed class SettingsTests
         Browser.MailTo(factory.MailDirectory, Admin).ShouldBeEmpty();
         back.GetProperty("mail").GetProperty("transport").GetString().ShouldBe("Files");
     }
+#endif
 
     [Test]
     public async Task Outside_Development_a_mail_folder_is_ignored_and_the_log_says_so()

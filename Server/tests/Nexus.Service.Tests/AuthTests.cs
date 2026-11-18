@@ -69,19 +69,20 @@ public sealed class AuthTests
     [Test]
     public async Task A_mailed_link_signs_in_once()
     {
-        await _factory.AddUserAsync(Rowan);
-        using var browser = _factory.NewBrowser();
+        using var factory = ServiceFactory.WithPostmark();
+        await factory.AddUserAsync(Rowan);
+        using var browser = factory.NewBrowser();
 
         (await browser.SendAsync(HttpMethod.Post, "/auth/link", new { email = Rowan })).StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var mail = Browser.MailTo(_factory.MailDirectory, Rowan).Single();
-        mail.Subject.ShouldBe("Your Nexus sign-in link");
-        (mail.TextBody ?? string.Empty).ShouldContain($"{ServiceFactory.ClientOrigin}/sign-in/link#");
+        var mail = Browser.PostmarkTo(factory.Postmark, Rowan).Single();
+        mail.GetProperty("Subject").GetString().ShouldBe("Your Nexus sign-in link");
+        (mail.GetProperty("TextBody").GetString() ?? string.Empty).ShouldContain($"{ServiceFactory.ClientOrigin}/sign-in/link#");
         var token = Browser.LinkToken(mail);
 
         (await browser.SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token })).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await browser.GetAsync<JsonElement>("/auth/me")).GetProperty("hasPassword").GetBoolean().ShouldBeFalse();
 
-        using var again = await _factory.NewBrowser().SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token });
+        using var again = await factory.NewBrowser().SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token });
         again.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await Browser.DetailAsync(again)).ShouldBe("This link has expired or was already used. Ask for a new one.");
     }
@@ -89,12 +90,13 @@ public sealed class AuthTests
     [Test]
     public async Task Mails_no_one_for_an_unknown_address_and_answers_the_same()
     {
-        using var browser = _factory.NewBrowser();
+        using var factory = ServiceFactory.WithPostmark();
+        using var browser = factory.NewBrowser();
 
         using var answer = await browser.SendAsync(HttpMethod.Post, "/auth/link", new { email = "nobody@acme.test" });
 
         answer.StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        Browser.MailTo(_factory.MailDirectory, "nobody@acme.test").ShouldBeEmpty();
+        Browser.PostmarkTo(factory.Postmark, "nobody@acme.test").ShouldBeEmpty();
     }
 
     [Test]
