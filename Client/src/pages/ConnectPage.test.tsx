@@ -56,7 +56,7 @@ const schwab = {
 }
 
 it("says the workspace's app is missing in place of the sign-in button", async () => {
-  const notReady = 'This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.'
+  const notReady = 'This workspace has no Charles Schwab app yet. Add it under Providers on the workspace page in Nexus.'
   jest.mocked(getConnect).mockResolvedValue({ ...opened, connector: { ...schwab, notReady } })
   render(<ConnectPage />)
 

@@ -9,12 +9,12 @@ import {
   type Destination,
   editApp,
   editSync,
-  getSignInMail,
+  getReminderEmail,
   getWorkspace,
   listApps,
   listConnections,
   listConnectors,
-  listSignInApps,
+  listProviders,
   listStreams,
   listSyncs,
   listUsers,
@@ -24,11 +24,11 @@ import {
   renewSignIn,
   replaceConnectionFile,
   runSync,
-  saveSignInApp,
-  saveSignInMail,
+  saveProvider,
+  saveReminderEmail,
   type SignIn,
-  type SignInApp,
-  type SignInMail,
+  type Provider,
+  type ReminderEmail,
   startSignIn,
   type Sync,
 } from '../api'
@@ -48,8 +48,8 @@ jest.mock('../api', () => ({
   listConnections: jest.fn(),
   listApps: jest.fn(),
   listSyncs: jest.fn(),
-  listSignInApps: jest.fn(),
-  saveSignInApp: jest.fn(),
+  listProviders: jest.fn(),
+  saveProvider: jest.fn(),
   listUsers: jest.fn(),
   addConnection: jest.fn(),
   listStreams: jest.fn(),
@@ -63,8 +63,8 @@ jest.mock('../api', () => ({
   startSignIn: jest.fn(),
   renewSignIn: jest.fn(),
   removeWorkspace: jest.fn(),
-  getSignInMail: jest.fn(),
-  saveSignInMail: jest.fn(),
+  getReminderEmail: jest.fn(),
+  saveReminderEmail: jest.fn(),
 }))
 
 jest.mock('../browser', () => ({ leaveFor: jest.fn() }))
@@ -89,7 +89,7 @@ const clock = (): SignIn => ({
 
 const brokerage = (signIn: SignIn): Connection => ({ ...shop, connector: 'schwab', settings: { startDate: '2026-01-01' }, signIn })
 
-const mailOff: SignInMail = {
+const mailOff: ReminderEmail = {
   choice: 'Off',
   people: [],
   candidates: [
@@ -165,22 +165,34 @@ const orphaned: Sync = {
 
 const refreshWorkspaces = jest.fn()
 
-function renderAs(me: Me) {
-  render(
-    <SessionContext.Provider value={{ me, setMe: jest.fn() }}>
-      <WorkspacesContext.Provider value={{ workspaces: null, error: null, refresh: refreshWorkspaces }}>
-        <WorkspacePage />
-      </WorkspacesContext.Provider>
-    </SessionContext.Provider>,
-  )
-}
+const pageAs = (me: Me) => (
+  <SessionContext.Provider value={{ me, setMe: jest.fn() }}>
+    <WorkspacesContext.Provider value={{ workspaces: null, error: null, refresh: refreshWorkspaces }}>
+      <WorkspacePage />
+    </WorkspacesContext.Provider>
+  </SessionContext.Provider>
+)
+
+const renderAs = (me: Me) => render(pageAs(me))
 
 const rowOf = async (table: string) => (await screen.findByText(table, { selector: 'strong' })).closest('li')!
+
+/** The button that shows or hides a connection's tables, named for the connection and its summary. */
+const tablesToggle = (connection: string) => screen.findByRole('button', { name: new RegExp(`^${connection}: `) })
+
+const openTables = async (connection: string) => userEvent.click(await tablesToggle(connection))
+
+/** Renders the page on one of its tabs, as its address names it. */
+function onTab(tab: string) {
+  routerState.params = { id: '4', tab }
+  routerState.pathname = `/workspaces/4/${tab}`
+}
 
 beforeEach(() => {
   jest.clearAllMocks()
   localStorage.clear()
   routerState.params = { id: '4' }
+  routerState.pathname = '/workspaces/4'
   jest.mocked(getWorkspace).mockResolvedValue({ id: 4, name: 'Acme', createdAt: '2026-11-15T12:00:00Z', members: [] })
   jest.mocked(listConnectors).mockResolvedValue([
     {
@@ -196,8 +208,8 @@ beforeEach(() => {
     },
   ])
   jest.mocked(listConnections).mockResolvedValue([shop])
-  jest.mocked(listSignInApps).mockResolvedValue([])
-  jest.mocked(getSignInMail).mockResolvedValue(mailOff)
+  jest.mocked(listProviders).mockResolvedValue([])
+  jest.mocked(getReminderEmail).mockResolvedValue(mailOff)
   jest.mocked(listApps).mockResolvedValue([scry])
   jest.mocked(listSyncs).mockResolvedValue([orders])
   jest.mocked(listUsers).mockResolvedValue([])
@@ -217,7 +229,9 @@ it('adds a connection from the settings its connector asks for', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Add connection' }))
 
   expect(addConnection).toHaveBeenCalledWith(4, 'Warehouse', 'mysql', { host: 'wh.test', password: 'hunter2' }, undefined)
-  expect(await screen.findByRole('listitem', { name: 'Connection Warehouse' })).toBeInTheDocument()
+  const card = await screen.findByRole('listitem', { name: 'Connection Warehouse' })
+  expect(within(card).getByRole('button', { name: 'Warehouse: No tables yet' })).toHaveAttribute('aria-expanded', 'true')
+  expect(within(card).getByRole('button', { name: 'Add tables' })).toBeInTheDocument()
 })
 
 const csvConnector = {
@@ -277,6 +291,7 @@ it("adds tables from a connection's streams into a destination", async () => {
   jest.mocked(addSyncs).mockResolvedValue([{ ...orders, id: 12, stream: 'shop.customers', table: 'shop_customers', status: 'Queued', lastRun: null }])
   renderAs(member)
   const card = await screen.findByRole('listitem', { name: 'Connection Shop' })
+  await openTables('Shop')
   await userEvent.click(within(card).getByRole('button', { name: 'Add tables' }))
 
   await userEvent.click(within(card).getByRole('button', { name: 'List its streams' }))
@@ -293,6 +308,7 @@ it("adds tables from a connection's streams into a destination", async () => {
 it('says what each table reads and where it writes, and runs one now', async () => {
   jest.mocked(runSync).mockResolvedValue({ ...orders, status: 'Queued' })
   renderAs(member)
+  await openTables('Shop')
   const row = await rowOf('shop_orders')
   expect(within(row).getByText('Reads shop.orders from Shop (MySQL), full refresh.')).toBeInTheDocument()
   expect(within(row).getByText('Writes into Scry at http://localhost:6161/ingest (destination 7, key scry_ab12…, named Nexus).')).toBeInTheDocument()
@@ -303,10 +319,12 @@ it('says what each table reads and where it writes, and runs one now', async () 
   expect(runSync).toHaveBeenCalledWith(11)
   expect(await within(row).findByText('Queued')).toBeInTheDocument()
   expect(within(row).getByRole('button', { name: 'Run now' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Shop: 1 table, 1 queued' })).toBeInTheDocument()
 })
 
 it("links each connection and each table to its own entries on the Log page", async () => {
   renderAs(member)
+  await openTables('Shop')
   const row = await rowOf('shop_orders')
 
   expect(within(row).getByRole('link', { name: 'Log for sync shop_orders' })).toHaveAttribute('href', '/log?sync=11')
@@ -328,6 +346,7 @@ it("edits a table's destination, name, and way of reading", async () => {
     status: 'Queued',
   })
   renderAs(member)
+  await openTables('Shop')
   const row = await rowOf('shop_orders')
 
   await userEvent.click(within(row).getByRole('button', { name: 'Edit' }))
@@ -354,6 +373,7 @@ it('shows an edit refused by the service in its form', async () => {
   jest.mocked(editSync).mockRejectedValue(new Error('The destination already has a sync into \'shop_orders\'. Pick another table name.'))
   jest.mocked(listApps).mockResolvedValue([reports, scry])
   renderAs(member)
+  await openTables('Shop')
   const row = await rowOf('shop_orders')
 
   await userEvent.click(within(row).getByRole('button', { name: 'Edit' }))
@@ -368,6 +388,10 @@ it('asks for a new destination for a table whose destination was removed', async
   jest.mocked(listSyncs).mockResolvedValue([orphaned])
   jest.mocked(editSync).mockResolvedValue({ ...orders, status: 'Queued' })
   renderAs(member)
+  const toggle = await tablesToggle('Shop')
+  expect(toggle).toHaveAccessibleName('Shop: 1 table, 1 needs a destination')
+  expect(toggle).toHaveClass('error')
+  await userEvent.click(toggle)
   const row = await rowOf('shop_orders')
 
   expect(within(row).getByText(NO_DESTINATION, { selector: 'p.error' })).toBeInTheDocument()
@@ -382,6 +406,7 @@ it('asks for a new destination for a table whose destination was removed', async
 
 it('dates each app, its key, and its destinations, and names the push key each destination sends', async () => {
   jest.mocked(listApps).mockResolvedValue([reports, scry])
+  onTab('apps')
   renderAs(member)
   const card = (await screen.findByText('Scry', { selector: 'strong' })).closest('li')!
   expect(within(card).getByText(/^Made .+\. Key nexus_abcdef…, made .+\.$/)).toBeInTheDocument()
@@ -398,6 +423,7 @@ it("lets an admin check a destination's key", async () => {
     keyCheckedAt: '2026-11-16T09:00:00Z',
     keyProblem: 'The push API refused the key. Send a push API key.',
   })
+  onTab('apps')
   renderAs({ ...member, isAdmin: true })
   const card = (await screen.findByText('Scry', { selector: 'strong' })).closest('li')!
 
@@ -408,6 +434,7 @@ it("lets an admin check a destination's key", async () => {
 })
 
 it('offers a member no app changes', async () => {
+  onTab('apps')
   renderAs(member)
   await screen.findByText('Scry', { selector: 'strong' })
   expect(screen.queryByRole('button', { name: 'New key' })).not.toBeInTheDocument()
@@ -417,6 +444,7 @@ it('offers a member no app changes', async () => {
 
 it("lets an admin set an app's return addresses, and shows each destination's id", async () => {
   jest.mocked(editApp).mockResolvedValue({ ...scry, returnUrls: ['http://localhost:6160/sources'] })
+  onTab('apps')
   renderAs({ ...member, isAdmin: true })
   expect(await screen.findByText(/^\(id 7, added .+\)$/)).toBeInTheDocument()
 
@@ -429,6 +457,7 @@ it("lets an admin set an app's return addresses, and shows each destination's id
 
 it('lets an admin make an app and shows its key once', async () => {
   jest.mocked(makeApp).mockResolvedValue({ app: { ...scry, id: 8, name: 'Reports', destinations: [] }, key: 'nexus_the-whole-key' })
+  onTab('apps')
   renderAs({ ...member, isAdmin: true })
   await screen.findByText('Scry', { selector: 'strong' })
 
@@ -451,7 +480,7 @@ const schwabConnector = {
   notReady: null,
 }
 
-const schwabApp: SignInApp = {
+const schwabApp: Provider = {
   connector: 'schwab',
   name: 'Charles Schwab',
   set: false,
@@ -459,14 +488,17 @@ const schwabApp: SignInApp = {
   keyEnding: null,
   updatedAt: null,
   callbackUrl: 'https://127.0.0.1:6164/oauth/callback',
-  problem: 'This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.',
+  problem: 'This workspace has no Charles Schwab app yet. Add it under Providers on the workspace page in Nexus.',
 }
 
 it('sets the workspace app a provider signs in through, showing the callback to register', async () => {
-  const set: SignInApp = { ...schwabApp, set: true, keyEnding: '1a2b', updatedAt: '2026-11-16T12:00:00Z', problem: null }
-  jest.mocked(listSignInApps).mockResolvedValueOnce([schwabApp]).mockResolvedValue([set])
-  jest.mocked(saveSignInApp).mockResolvedValue(set)
+  const set: Provider = { ...schwabApp, set: true, keyEnding: '1a2b', updatedAt: '2026-11-16T12:00:00Z', problem: null }
+  jest.mocked(listProviders).mockResolvedValueOnce([schwabApp]).mockResolvedValue([set])
+  jest.mocked(saveProvider).mockResolvedValue(set)
+  onTab('providers')
   renderAs(member)
+
+  expect(await screen.findByRole('heading', { level: 2, name: 'Providers' })).toBeInTheDocument()
 
   expect(await screen.findByText('Not set yet.')).toBeInTheDocument()
   expect(screen.getByLabelText('Callback to register on the app')).toHaveValue('https://127.0.0.1:6164/oauth/callback')
@@ -474,7 +506,7 @@ it('sets the workspace app a provider signs in through, showing the callback to 
   await userEvent.type(screen.getByLabelText('App secret'), 'the-secret')
   await userEvent.click(screen.getByRole('button', { name: 'Save app' }))
 
-  expect(saveSignInApp).toHaveBeenCalledWith(4, 'schwab', 'key-1a2b', 'the-secret')
+  expect(saveProvider).toHaveBeenCalledWith(4, 'schwab', 'key-1a2b', 'the-secret')
   expect(await screen.findByText(/^Set, with the key ending 1a2b/)).toBeInTheDocument()
   expect(screen.getByLabelText('App secret')).toHaveValue('')
   expect(screen.getByLabelText('App secret')).toHaveAttribute('placeholder', 'Stored')
@@ -482,7 +514,7 @@ it('sets the workspace app a provider signs in through, showing the callback to 
 
 it("says a provider cannot be signed in to until the workspace's app is set, in place of the sign-in button", async () => {
   jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
-  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
+  jest.mocked(listProviders).mockResolvedValue([schwabApp])
   renderAs(member)
 
   await userEvent.click(await screen.findByRole('button', { name: 'Add connection' }))
@@ -499,6 +531,7 @@ it('signs in to a provider for a connector that signs in, and says so on coming 
 
   expect(await screen.findByText('Signed in. Its tables are added from its card below.')).toBeInTheDocument()
   expect(window.location.search).toBe('')
+  expect(await tablesToggle('Shop')).toHaveAttribute('aria-expanded', 'true')
   await userEvent.click(screen.getByRole('button', { name: 'Add connection' }))
   await userEvent.type(screen.getByLabelText('Name'), 'Brokerage')
   await userEvent.type(screen.getByLabelText('Read history from (yyyy-MM-dd)'), '2026-01-01')
@@ -563,22 +596,25 @@ it('offers no sign-in to a connection that does not sign in', async () => {
 
 it('sets who is mailed about the sign-ins, picking people among the members and admins', async () => {
   jest.mocked(listConnectors).mockResolvedValue([schwabConnector])
-  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
-  jest.mocked(saveSignInMail).mockResolvedValue({ ...mailOff, choice: 'Named', people: [2] })
+  jest.mocked(listProviders).mockResolvedValue([schwabApp])
+  jest.mocked(saveReminderEmail).mockResolvedValue({ ...mailOff, choice: 'Named', people: [2] })
+  onTab('reminder-email')
   renderAs(member)
 
+  expect(await screen.findByRole('heading', { level: 2, name: 'Session expiry reminder email' })).toBeInTheDocument()
   await userEvent.click(await screen.findByRole('radio', { name: 'People I pick' }))
   await userEvent.click(screen.getByRole('checkbox', { name: 'member@acme.test' }))
   await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-  expect(saveSignInMail).toHaveBeenCalledWith(4, 'Named', [2])
+  expect(saveReminderEmail).toHaveBeenCalledWith(4, 'Named', [2])
   expect(await screen.findByText('Saved.')).toBeInTheDocument()
   expect(screen.getByRole('radio', { name: 'People I pick' })).toBeChecked()
 })
 
 it('says nothing is mailed on an instance without mail', async () => {
-  jest.mocked(listSignInApps).mockResolvedValue([schwabApp])
-  jest.mocked(getSignInMail).mockResolvedValue({ ...mailOff, mailReady: false })
+  jest.mocked(listProviders).mockResolvedValue([schwabApp])
+  jest.mocked(getReminderEmail).mockResolvedValue({ ...mailOff, mailReady: false })
+  onTab('reminder-email')
   renderAs(member)
 
   expect(await screen.findByText('This instance has no mail set up, so nothing is sent. An admin sets it up on the Settings page.')).toBeInTheDocument()
@@ -603,4 +639,86 @@ it("removes the workspace, tells the header's menu, and goes to the Workspaces p
   expect(removeWorkspace).toHaveBeenCalledWith(4)
   expect(refreshWorkspaces).toHaveBeenCalled()
   expect(navigate).toHaveBeenCalledWith('/workspaces')
+})
+
+const tabsOf = async () =>
+  within(await screen.findByRole('navigation', { name: 'Workspace sections' }))
+    .getAllByRole('link')
+    .map((link) => `${link.textContent} ${link.getAttribute('href')}`)
+
+it("shows a member a tab for each section they may open, each at its own address", async () => {
+  renderAs(member)
+
+  expect(await tabsOf()).toEqual(['Connections /workspaces/4', 'Apps /workspaces/4/apps'])
+  expect(screen.getByRole('link', { name: 'Connections' })).toHaveClass('is-active')
+  expect(screen.getByRole('heading', { level: 2, name: 'Connections' })).toBeInTheDocument()
+})
+
+it('adds the Providers and reminder email tabs where a connector signs in, and Members for an admin', async () => {
+  jest.mocked(listProviders).mockResolvedValue([schwabApp])
+  onTab('members')
+  renderAs({ ...member, isAdmin: true })
+
+  expect(await tabsOf()).toEqual([
+    'Connections /workspaces/4',
+    'Providers /workspaces/4/providers',
+    'Session expiry reminder email /workspaces/4/reminder-email',
+    'Apps /workspaces/4/apps',
+    'Members /workspaces/4/members',
+  ])
+  expect(screen.getByRole('link', { name: 'Members' })).toHaveClass('is-active')
+  expect(screen.getByRole('heading', { level: 2, name: 'Members' })).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { level: 2, name: 'Connections' })).not.toBeInTheDocument()
+})
+
+it.each(['members', 'providers', 'reminder-email', 'nothing-here'])('sends a member from the %s address to Connections', async (tab) => {
+  onTab(tab)
+  renderAs(member)
+
+  await screen.findByRole('heading', { level: 1, name: 'Acme' })
+
+  expect(navigate).toHaveBeenCalledWith('/workspaces/4', { replace: true })
+})
+
+it("starts each connection collapsed, with a summary of its tables, and opens it to show them", async () => {
+  const customers: Sync = {
+    ...orders,
+    id: 13,
+    stream: 'shop.customers',
+    table: 'shop_customers',
+    status: 'Failed',
+    lastRun: { ...orders.lastRun!, status: 'Failed', rows: 0, errorKind: 'ConfigInvalid', error: 'Access denied.' },
+  }
+  jest.mocked(listSyncs).mockResolvedValue([orders, customers])
+  renderAs(member)
+
+  const toggle = await tablesToggle('Shop')
+  expect(toggle).toHaveAccessibleName('Shop: 2 tables, 1 failed')
+  expect(toggle).toHaveClass('error')
+  expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  expect(screen.queryByText('shop_orders', { selector: 'strong' })).not.toBeInTheDocument()
+
+  await userEvent.click(toggle)
+
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  expect(document.getElementById(toggle.getAttribute('aria-controls')!)).toContainElement(await rowOf('shop_orders'))
+  expect(await rowOf('shop_customers')).toBeInTheDocument()
+
+  await userEvent.click(toggle)
+  expect(screen.queryByText('shop_orders', { selector: 'strong' })).not.toBeInTheDocument()
+})
+
+it('keeps a connection open across a visit to another tab, without loading the workspace again', async () => {
+  const page = renderAs(member)
+  await openTables('Shop')
+
+  onTab('apps')
+  page.rerender(pageAs(member))
+  expect(await screen.findByRole('heading', { level: 2, name: 'Apps' })).toBeInTheDocument()
+  routerState.params = { id: '4' }
+  routerState.pathname = '/workspaces/4'
+  page.rerender(pageAs(member))
+
+  expect(await tablesToggle('Shop')).toHaveAttribute('aria-expanded', 'true')
+  expect(getWorkspace).toHaveBeenCalledTimes(1)
 })

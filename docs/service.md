@@ -7,6 +7,12 @@ database of its own, and runs each sync by reading its stream through a source c
 through `PushDestination`. It reads through the MySQL, PostgreSQL, SQL Server, and CSV sources. `Client/` holds its
 pages.
 
+A workspace's page has a tab for each part of it, each at its own address: Connections at `/workspaces/{id}`, then
+Providers, Session expiry reminder email, Apps, and, for admins, Members, at `/workspaces/{id}/providers`,
+`/reminder-email`, `/apps`, and `/members`. Providers and the reminder email show only where a connector signs in.
+Each connection's card starts collapsed, with a line that counts its tables and any that failed, are queued or
+running, or need a destination, and opens to show them.
+
 - A connection whose connector signs in, such as Schwab, is made by signing in. The sign-in starts from the
   workspace page (`POST /workspaces/{id}/sign-ins` with `{name, connector, settings}`), from a connect page
   (`POST /connect/sign-in` with `{name, settings}`), or to renew a connection (`POST /connections/{id}/sign-in`),
@@ -16,7 +22,7 @@ pages.
   page, with its `error`. Schwab's setting that allows orders is never offered,
   since the service only reads.
 - Each workspace signs in through its own app at the provider, such as its Schwab app, which its members set under
-  Sign-in apps on the workspace page, beside the callback to register on it. The app's secret is encrypted and
+  Providers on the workspace page, beside the callback to register on it. The app's secret is encrypted and
   never shown again. A connector whose app is not set says so wherever it is offered, in place of signing in, and a
   sync of it fails and says so.
 - A sign-in under way is kept in the database for 10 minutes, by a hash of the `state` the provider's redirect
@@ -29,9 +35,9 @@ pages.
   it warns once, in the Log. At the end, it marks the connection as needing a sign-in. A session that ends without
   calls is called as often as its connector asks, and ends when a call is refused, or when none has answered for its
   idle time.
-- A workspace's Sign-in mail section, on the workspace page, says who is mailed when a sign-in's warning starts and
-  when it ends: no one, which it starts at, every member and admin, the admins, or people named among them. Any
-  member changes it. An instance without mail sends none.
+- A workspace's Session expiry reminder email tab, on the workspace page, says who is mailed when a sign-in's warning
+  starts and when it ends: no one, which it starts at, every member and admin, the admins, or people named among them.
+  Any member changes it. An instance without mail sends none.
 - A connection whose connector reads a file, such as CSV, is made from a `multipart/form-data` upload: `name`,
   `connector`, `settings` as a JSON object of text, and `file`, up to 1 GB. The file is kept in `data/files` as the
   connection's own copy, kept only once the connector reads it, and deleted with the connection.

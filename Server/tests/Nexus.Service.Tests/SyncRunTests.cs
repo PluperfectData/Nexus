@@ -184,7 +184,7 @@ public sealed class SyncRunTests
         var run = await RunAsync(syncId);
 
         run.Status.ShouldBe(RunStatus.Failed);
-        run.Error.ShouldBe("This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.");
+        run.Error.ShouldBe("This workspace has no Charles Schwab app yet. Add it under Providers on the workspace page in Nexus.");
     }
 
     private async Task<int> SeedAsync(SyncMode mode, string key = FakePush.Key, string connector = FakeSource.Id)

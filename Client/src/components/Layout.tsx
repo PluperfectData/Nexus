@@ -39,7 +39,7 @@ export function Layout() {
   const navigate = useNavigate()
   const { me, setMe } = useSession()
   const { workspaces } = useWorkspaces()
-  const inPage = useMatch('/workspaces/:id')?.params.id
+  const inPage = useMatch('/workspaces/:id/*')?.params.id
   const current = currentOf(workspaces, inPage === undefined ? null : Number(inPage))
 
   // Navigating with the menu open leaves it covering the page it just went to.

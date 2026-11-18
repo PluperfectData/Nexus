@@ -184,7 +184,7 @@ public sealed class SignInTests
     private async Task<int> MakeWorkspaceAsync()
     {
         var workspace = (await _admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
-        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId = "app-key", clientSecret = "app-secret" }))
+        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/schwab", new { clientId = "app-key", clientSecret = "app-secret" }))
             .EnsureSuccessStatusCode();
         return workspace;
     }

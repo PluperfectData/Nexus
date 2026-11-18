@@ -5,8 +5,10 @@ import { leaveFor } from '../browser'
 import { placesOf } from '../places'
 import { defaultsOf } from '../fields'
 import { offersSignIn } from '../signIn'
+import { tablesSummary } from '../syncs'
 import { FieldInput } from './FieldInput'
 import { SignInStatus } from './SignInStatus'
+import { SyncTables } from './SyncTables'
 
 /** A button that picks a new copy of the file a connection reads. */
 function ReplaceFile({ connection, onPick }: { connection: Connection; onPick: (file: File) => void }) {
@@ -30,7 +32,6 @@ function ReplaceFile({ connection, onPick }: { connection: Connection; onPick: (
     </>
   )
 }
-import { SyncTables } from './SyncTables'
 
 /** A form for a connection: a name, a connector, and the settings that connector asks for, checked by the service. */
 function ConnectionForm({
@@ -124,7 +125,7 @@ function ConnectionForm({
 
 /**
  * A workspace's connections, each with its name, its connector, and the settings it is safe to show, and beneath it
- * the tables it syncs into apps' destinations.
+ * a summary of the tables it syncs into apps' destinations, which opens to show them.
  */
 export function ConnectionsSection({
   workspaceId,
@@ -132,6 +133,8 @@ export function ConnectionsSection({
   connections,
   syncs,
   apps,
+  open,
+  onToggle,
   onAdded,
   onRemove,
   onSyncsAdded,
@@ -146,6 +149,9 @@ export function ConnectionsSection({
   connections: Connection[]
   syncs: Sync[]
   apps: App[]
+  /** The connections whose tables show. */
+  open: ReadonlySet<number>
+  onToggle: (connection: Connection) => void
   onAdded: (connection: Connection) => void
   onRemove: (connection: Connection) => void
   onReplaceFile: (connection: Connection, file: File) => void
@@ -184,47 +190,70 @@ export function ConnectionsSection({
         <p className="muted">No connections yet.</p>
       ) : (
         <ul className="list cards">
-          {connections.map((connection) => (
-            <li key={connection.id} aria-label={`Connection ${connection.name}`}>
-              <div className="card-head">
-                <div>
-                  <strong>{connection.name}</strong>
-                  <p className="muted">
-                    {nameOf(connection.connector)}
-                    {connection.fileName && `, file ${connection.fileName}`}
-                    {Object.entries(connection.settings)
-                      .filter(([, value]) => value)
-                      .map(([key, value]) => `, ${key} ${value}`)
-                      .join('')}
-                  </p>
-                  {connection.signIn && <SignInStatus signIn={connection.signIn} provider={nameOf(connection.connector)} />}
-                </div>
-                <div className="row-actions">
-                  {offersSignIn(connection.signIn) && (
-                    <button type="button" className="secondary" onClick={() => onSignInAgain(connection)}>
-                      Sign in again
+          {connections.map((connection) => {
+            const own = syncs.filter((s) => s.connectionId === connection.id)
+            const summary = tablesSummary(own)
+            const isOpen = open.has(connection.id)
+            const tablesId = `connection-${connection.id}-tables`
+            return (
+              <li key={connection.id} aria-label={`Connection ${connection.name}`}>
+                <div className="card-head">
+                  <div>
+                    <strong>{connection.name}</strong>
+                    <p className="muted">
+                      {nameOf(connection.connector)}
+                      {connection.fileName && `, file ${connection.fileName}`}
+                      {Object.entries(connection.settings)
+                        .filter(([, value]) => value)
+                        .map(([key, value]) => `, ${key} ${value}`)
+                        .join('')}
+                    </p>
+                    {connection.signIn && <SignInStatus signIn={connection.signIn} provider={nameOf(connection.connector)} />}
+                    <button
+                      type="button"
+                      className={summary.problem ? 'disclosure error' : 'disclosure'}
+                      aria-expanded={isOpen}
+                      aria-controls={tablesId}
+                      onClick={() => onToggle(connection)}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span className="sr-only">{connection.name}: </span>
+                      {summary.text}
                     </button>
-                  )}
-                  {connection.fileName && <ReplaceFile connection={connection} onPick={(file) => onReplaceFile(connection, file)} />}
-                  <Link to={`/log?connection=${connection.id}`} className="row-link" aria-label={`Log for connection ${connection.name}`}>
-                    Log
-                  </Link>
-                  <button type="button" className="quiet" onClick={() => onRemove(connection)}>
-                    Remove
-                  </button>
+                  </div>
+                  <div className="row-actions">
+                    {offersSignIn(connection.signIn) && (
+                      <button type="button" className="secondary" onClick={() => onSignInAgain(connection)}>
+                        Sign in again
+                      </button>
+                    )}
+                    {connection.fileName && <ReplaceFile connection={connection} onPick={(file) => onReplaceFile(connection, file)} />}
+                    <Link to={`/log?connection=${connection.id}`} className="row-link" aria-label={`Log for connection ${connection.name}`}>
+                      Log
+                    </Link>
+                    <button type="button" className="quiet" onClick={() => onRemove(connection)}>
+                      Remove
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <SyncTables
-                connection={connection}
-                syncs={syncs.filter((s) => s.connectionId === connection.id)}
-                places={places}
-                onAdded={onSyncsAdded}
-                onRun={onRunSync}
-                onRemove={onRemoveSync}
-                onEdit={onEditSync}
-              />
-            </li>
-          ))}
+                <div id={tablesId} hidden={!isOpen}>
+                  {isOpen && (
+                    <SyncTables
+                      connection={connection}
+                      syncs={own}
+                      places={places}
+                      onAdded={onSyncsAdded}
+                      onRun={onRunSync}
+                      onRemove={onRemoveSync}
+                      onEdit={onEditSync}
+                    />
+                  )}
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>

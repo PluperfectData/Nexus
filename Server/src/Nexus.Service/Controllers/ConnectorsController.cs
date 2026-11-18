@@ -10,7 +10,7 @@ public sealed record FieldView(string Name, string Label, SettingKind Kind, bool
 
 /// <summary>
 /// A connector and the settings it asks for. <paramref name="NotReady"/> says why it cannot be connected in the
-/// workspace asking yet, such as a sign-in app the workspace has not set; it is null when it can, or when no workspace
+/// workspace asking yet, such as a provider the workspace has not set up; it is null when it can, or when no workspace
 /// is asking.
 /// </summary>
 public sealed record ConnectorView(string Id, string Name, string Description, AuthKind Auth, IReadOnlyList<FieldView> Fields, string? NotReady)

@@ -4,24 +4,24 @@ using Nexus.Service.Storage;
 
 namespace Nexus.Service.Controllers;
 
-public sealed record SignInMailCandidate(int Id, string Email, bool IsAdmin);
+public sealed record ReminderEmailCandidate(int Id, string Email, bool IsAdmin);
 
 /// <summary>
 /// Who a workspace mails when a connection's sign-in is about to end, or has ended. <paramref name="People"/> are those
 /// named, chosen among <paramref name="Candidates"/>: its members and the admins. Without <paramref name="MailReady"/>,
 /// nothing is sent.
 /// </summary>
-public sealed record SignInMailView(SignInMail Choice, IReadOnlyList<int> People, IReadOnlyList<SignInMailCandidate> Candidates, bool MailReady);
+public sealed record ReminderEmailView(SignInMail Choice, IReadOnlyList<int> People, IReadOnlyList<ReminderEmailCandidate> Candidates, bool MailReady);
 
-public sealed record SignInMailRequest(SignInMail Choice, IReadOnlyList<int>? People);
+public sealed record ReminderEmailRequest(SignInMail Choice, IReadOnlyList<int>? People);
 
-/// <summary>A workspace's sign-in mail, which its members set.</summary>
+/// <summary>A workspace's session expiry reminder email, which its members set.</summary>
 [ApiController]
-[Route("workspaces/{workspaceId:int}/sign-in-mail")]
-public sealed class SignInMailController(NexusDbContext db, Access access, Instance instance, OperatorLog log) : ControllerBase
+[Route("workspaces/{workspaceId:int}/reminder-email")]
+public sealed class ReminderEmailController(NexusDbContext db, Access access, Instance instance, OperatorLog log) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<SignInMailView>> Get(int workspaceId, CancellationToken ct)
+    public async Task<ActionResult<ReminderEmailView>> Get(int workspaceId, CancellationToken ct)
     {
         if (!await access.CanSeeAsync(User, workspaceId, ct) || await db.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId, ct) is not { } workspace)
         {
@@ -32,7 +32,7 @@ public sealed class SignInMailController(NexusDbContext db, Access access, Insta
     }
 
     [HttpPut]
-    public async Task<ActionResult<SignInMailView>> Set(int workspaceId, SignInMailRequest request, CancellationToken ct)
+    public async Task<ActionResult<ReminderEmailView>> Set(int workspaceId, ReminderEmailRequest request, CancellationToken ct)
     {
         if (!await access.CanSeeAsync(User, workspaceId, ct) || await db.Workspaces.FirstOrDefaultAsync(w => w.Id == workspaceId, ct) is not { } workspace)
         {
@@ -66,20 +66,20 @@ public sealed class SignInMailController(NexusDbContext db, Access access, Insta
         return await ViewAsync(workspace, ct);
     }
 
-    private async Task<SignInMailView> ViewAsync(Workspace workspace, CancellationToken ct) =>
+    private async Task<ReminderEmailView> ViewAsync(Workspace workspace, CancellationToken ct) =>
         new(
             workspace.SignInMail,
             await db.SignInMailPeople.Where(p => p.WorkspaceId == workspace.Id).Select(p => p.UserId).OrderBy(id => id).ToListAsync(ct),
             await CandidatesAsync(workspace.Id, ct),
             instance.MailReady);
 
-    private async Task<List<SignInMailCandidate>> CandidatesAsync(int workspaceId, CancellationToken ct)
+    private async Task<List<ReminderEmailCandidate>> CandidatesAsync(int workspaceId, CancellationToken ct)
     {
         var members = db.WorkspaceMembers.Where(m => m.WorkspaceId == workspaceId).Select(m => m.UserId);
         return await db.Users
             .Where(u => u.IsAdmin || members.Contains(u.Id))
             .OrderBy(u => u.Email)
-            .Select(u => new SignInMailCandidate(u.Id, u.Email, u.IsAdmin))
+            .Select(u => new ReminderEmailCandidate(u.Id, u.Email, u.IsAdmin))
             .ToListAsync(ct);
     }
 }

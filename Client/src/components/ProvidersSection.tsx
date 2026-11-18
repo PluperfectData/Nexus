@@ -1,9 +1,9 @@
 import { type FormEvent, useState } from 'react'
-import { listSignInApps, removeSignInApp, saveSignInApp, type SignInApp } from '../api'
+import { listProviders, removeProvider, saveProvider, type Provider } from '../api'
 import { CopyValue } from './InstanceForms'
 
 /** One provider's app: whether it is set, the callback to register on it, and its key and secret, which are never shown. */
-function SignInAppCard({ workspaceId, app, onChange }: { workspaceId: number; app: SignInApp; onChange: (apps: SignInApp[]) => void }) {
+function ProviderCard({ workspaceId, app, onChange }: { workspaceId: number; app: Provider; onChange: (apps: Provider[]) => void }) {
   const [key, setKey] = useState('')
   const [secret, setSecret] = useState('')
   const [busy, setBusy] = useState(false)
@@ -26,8 +26,8 @@ function SignInAppCard({ workspaceId, app, onChange }: { workspaceId: number; ap
   function submit(event: FormEvent) {
     event.preventDefault()
     void act(async () => {
-      await saveSignInApp(workspaceId, app.connector, key.trim(), secret.trim())
-      onChange(await listSignInApps(workspaceId))
+      await saveProvider(workspaceId, app.connector, key.trim(), secret.trim())
+      onChange(await listProviders(workspaceId))
       setKey('')
       setSecret('')
       setNotice('Saved.')
@@ -37,8 +37,8 @@ function SignInAppCard({ workspaceId, app, onChange }: { workspaceId: number; ap
   const remove = () =>
     window.confirm(`Remove the ${app.name} app? This workspace's ${app.name} connections stop syncing until another is set.`) &&
     act(async () => {
-      await removeSignInApp(workspaceId, app.connector)
-      onChange(await listSignInApps(workspaceId))
+      await removeProvider(workspaceId, app.connector)
+      onChange(await listProviders(workspaceId))
     })
 
   const status = app.configured
@@ -108,13 +108,13 @@ function SignInAppCard({ workspaceId, app, onChange }: { workspaceId: number; ap
 }
 
 /** The apps a workspace signs in to providers through, such as its Schwab app. */
-export function SignInAppsSection({ workspaceId, apps, onChange }: { workspaceId: number; apps: SignInApp[]; onChange: (apps: SignInApp[]) => void }) {
+export function ProvidersSection({ workspaceId, apps, onChange }: { workspaceId: number; apps: Provider[]; onChange: (apps: Provider[]) => void }) {
   if (apps.length === 0) return null
 
   return (
     <section>
       <div className="section-head">
-        <h2>Sign-in apps</h2>
+        <h2>Providers</h2>
       </div>
       <p className="muted">
         Providers such as Charles Schwab sign people in through an app this workspace registers with them. Its connections
@@ -123,7 +123,7 @@ export function SignInAppsSection({ workspaceId, apps, onChange }: { workspaceId
       <ul className="list cards">
         {apps.map((app) => (
           <li key={app.connector}>
-            <SignInAppCard workspaceId={workspaceId} app={app} onChange={onChange} />
+            <ProviderCard workspaceId={workspaceId} app={app} onChange={onChange} />
           </li>
         ))}
       </ul>

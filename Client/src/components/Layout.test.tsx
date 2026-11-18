@@ -60,6 +60,13 @@ describe('the workspace menu', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Manage workspaces' })).not.toBeInTheDocument()
   })
 
+  it('names the workspace on any of its tabs', () => {
+    routerState.pathname = '/workspaces/2/apps'
+    renderWith(member)
+
+    expect(screen.getByRole('button', { name: 'Workspace: Finance' })).toBeInTheDocument()
+  })
+
   it('names the workspace last opened on a page outside any, such as the Log', () => {
     localStorage.setItem('nexus-workspace', '2')
     routerState.pathname = '/log'

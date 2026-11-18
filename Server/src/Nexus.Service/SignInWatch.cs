@@ -92,7 +92,7 @@ public sealed class SignInState(SourceConnectors connectors, OperatorLog log, Si
 /// <summary>Mails the people a workspace chose about its connections' sign-ins, once the caller has saved the change.</summary>
 public sealed class SignInMailer(NexusDbContext db, IMailer mailer, Instance instance, SourceConnectors connectors, OperatorLog log)
 {
-    private const string WhyMailed = "You get this mail because the workspace's sign-in mail names you. Its members change that on the workspace page.";
+    private const string WhyMailed = "You get this mail because the workspace's session expiry reminder email names you. Its members change that on the workspace page.";
 
     private readonly List<(Connection Connection, SignInNews News)> _queued = [];
 

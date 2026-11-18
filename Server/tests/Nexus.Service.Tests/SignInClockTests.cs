@@ -121,7 +121,7 @@ public sealed class SignInClockTests
         var workspace = await MakeWorkspaceAsync();
         var id = await SignInAsync(workspace);
         var member = await AddMemberAsync(workspace, "member@acme.test");
-        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Named", people = new[] { member } }))
+        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Named", people = new[] { member } }))
             .EnsureSuccessStatusCode();
         await EditAsync(id, c => c.SignInEndsAt = DateTime.UtcNow.AddHours(3));
 
@@ -144,7 +144,7 @@ public sealed class SignInClockTests
         var workspace = await MakeWorkspaceAsync();
         var id = await SignInAsync(workspace);
         await AddMemberAsync(workspace, "member@acme.test");
-        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Everyone" })).EnsureSuccessStatusCode();
+        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Everyone" })).EnsureSuccessStatusCode();
         var ends = DateTime.UtcNow.AddMinutes(-1);
         await EditAsync(id, c => c.SignInEndsAt = ends);
 
@@ -239,11 +239,11 @@ public sealed class SignInClockTests
         using var outsiderBrowser = _factory.NewBrowser();
         (await outsiderBrowser.SignInAsync("outsider@acme.test", Browser.Password)).EnsureSuccessStatusCode();
 
-        var first = await _admin.GetAsync<JsonElement>($"/workspaces/{workspace}/sign-in-mail");
-        using var nobody = await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Named", people = Array.Empty<int>() });
-        using var stranger = await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Named", people = new[] { outsider.Id } });
-        var admins = await _admin.SendAsync<JsonElement>(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Admins" });
-        using var hidden = await outsiderBrowser.GetAsync($"/workspaces/{workspace}/sign-in-mail");
+        var first = await _admin.GetAsync<JsonElement>($"/workspaces/{workspace}/reminder-email");
+        using var nobody = await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Named", people = Array.Empty<int>() });
+        using var stranger = await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Named", people = new[] { outsider.Id } });
+        var admins = await _admin.SendAsync<JsonElement>(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Admins" });
+        using var hidden = await outsiderBrowser.GetAsync($"/workspaces/{workspace}/reminder-email");
 
         first.GetProperty("choice").GetString().ShouldBe("Off");
         first.GetProperty("mailReady").GetBoolean().ShouldBeTrue();
@@ -262,7 +262,7 @@ public sealed class SignInClockTests
         using var factory = new ServiceFactory(mailToFiles: false);
         using var admin = await factory.SignedInAsync(AdminEmail, admin: true);
         var workspace = (await admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
-        (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-mail", new { choice = "Everyone" })).EnsureSuccessStatusCode();
+        (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Everyone" })).EnsureSuccessStatusCode();
         int id;
         await using (var db = factory.NewContext())
         {
@@ -279,7 +279,7 @@ public sealed class SignInClockTests
             await scope.ServiceProvider.GetRequiredService<SignInChecks>().RunAsync(CancellationToken.None);
         }
 
-        var mail = await admin.GetAsync<JsonElement>($"/workspaces/{workspace}/sign-in-mail");
+        var mail = await admin.GetAsync<JsonElement>($"/workspaces/{workspace}/reminder-email");
         mail.GetProperty("mailReady").GetBoolean().ShouldBeFalse();
         factory.Postmark.Sent.ShouldBeEmpty();
         await using var check = factory.NewContext();
@@ -425,7 +425,7 @@ public sealed class SignInClockTests
     private async Task<int> MakeWorkspaceAsync()
     {
         var workspace = (await _admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
-        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId = "app-key", clientSecret = "app-secret" }))
+        (await _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/schwab", new { clientId = "app-key", clientSecret = "app-secret" }))
             .EnsureSuccessStatusCode();
         return workspace;
     }

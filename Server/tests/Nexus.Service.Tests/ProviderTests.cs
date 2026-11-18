@@ -12,9 +12,9 @@ using Shouldly;
 namespace Nexus.Service.Tests;
 
 [TestFixture]
-public sealed class SignInAppTests
+public sealed class ProviderTests
 {
-    private const string NoApp = "This workspace has no Charles Schwab app yet. Add it under Sign-in apps on the workspace page in Nexus.";
+    private const string NoApp = "This workspace has no Charles Schwab app yet. Add it under Providers on the workspace page in Nexus.";
 
     private const string ReturnUrl = "http://localhost:6160/sources";
 
@@ -43,12 +43,12 @@ public sealed class SignInAppTests
         var workspace = await MakeWorkspaceAsync("Acme");
         using var member = await _factory.SignedInAsync("member@acme.test");
 
-        var before = (await _admin.GetAsync<JsonElement>($"/workspaces/{workspace}/sign-in-apps")).EnumerateArray().Single();
+        var before = (await _admin.GetAsync<JsonElement>($"/workspaces/{workspace}/providers")).EnumerateArray().Single();
         using var secretless = await PutAppAsync(workspace, "key-one-1a2b", "");
         using var set = await PutAppAsync(workspace, "key-one-1a2b", "secret-one");
         var setBody = await set.Content.ReadAsStringAsync();
         using var replaced = await PutAppAsync(workspace, "key-two-9z9y", "");
-        using var stranger = await member.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId = "k", clientSecret = "s" });
+        using var stranger = await member.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/schwab", new { clientId = "k", clientSecret = "s" });
 
         before.GetProperty("connector").GetString().ShouldBe("schwab");
         before.GetProperty("name").GetString().ShouldBe("Charles Schwab");
@@ -80,7 +80,7 @@ public sealed class SignInAppTests
 
         var acmePage = await StartAsync(acme);
         var globexPage = await StartAsync(globex);
-        (await _admin.SendAsync(HttpMethod.Delete, $"/workspaces/{acme}/sign-in-apps/schwab")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await _admin.SendAsync(HttpMethod.Delete, $"/workspaces/{acme}/providers/schwab")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
         using var refused = await _admin.SendAsync(HttpMethod.Post, $"/workspaces/{acme}/sign-ins", new { name = "Brokerage", connector = "schwab", settings = Settings });
 
         ClientIdOf(acmePage).ShouldBe("acme-key");
@@ -139,8 +139,8 @@ public sealed class SignInAppTests
         using var admin = new Browser(configured.CreateDefaultClient(new Uri("http://localhost/"), new Microsoft.AspNetCore.Mvc.Testing.Handlers.CookieContainerHandler(cookies)), cookies);
         (await admin.SignInAsync("admin@acme.test", Browser.Password)).EnsureSuccessStatusCode();
 
-        var view = (await admin.GetAsync<JsonElement>($"/workspaces/{workspace}/sign-in-apps")).EnumerateArray().Single();
-        using var refused = await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId = "mine", clientSecret = "mine" });
+        var view = (await admin.GetAsync<JsonElement>($"/workspaces/{workspace}/providers")).EnumerateArray().Single();
+        using var refused = await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/schwab", new { clientId = "mine", clientSecret = "mine" });
         var started = await admin.SendAsync<JsonElement>(HttpMethod.Post, $"/workspaces/{workspace}/sign-ins", new { name = "Brokerage", connector = "schwab", settings = Settings });
 
         view.GetProperty("configured").GetBoolean().ShouldBeTrue();
@@ -157,7 +157,7 @@ public sealed class SignInAppTests
         connectors.EnumerateArray().Single(c => c.GetProperty("id").GetString() == id).GetProperty("notReady").GetString();
 
     private Task<HttpResponseMessage> PutAppAsync(int workspace, string clientId, string clientSecret) =>
-        _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/schwab", new { clientId, clientSecret });
+        _admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/schwab", new { clientId, clientSecret });
 
     private async Task<string> StartAsync(int workspace) =>
         (await _admin.SendAsync<JsonElement>(HttpMethod.Post, $"/workspaces/{workspace}/sign-ins", new { name = "Brokerage", connector = "schwab", settings = Settings }))

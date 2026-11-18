@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { getSignInMail, saveSignInMail, type SignInMail, type SignInMailChoice } from '../api'
+import { getReminderEmail, saveReminderEmail, type ReminderEmail, type ReminderEmailChoice } from '../api'
 
-const CHOICES: { value: SignInMailChoice; label: string }[] = [
+const CHOICES: { value: ReminderEmailChoice; label: string }[] = [
   { value: 'Off', label: 'No one' },
   { value: 'Everyone', label: 'Every member and admin' },
   { value: 'Admins', label: 'The admins' },
@@ -9,22 +9,22 @@ const CHOICES: { value: SignInMailChoice; label: string }[] = [
 ]
 
 /** Who Nexus mails when one of the workspace's sign-ins is about to end, and again once it has. */
-export function SignInMailSection({ workspaceId }: { workspaceId: number }) {
-  const [mail, setMail] = useState<SignInMail | null>(null)
-  const [choice, setChoice] = useState<SignInMailChoice>('Off')
+export function ReminderEmailSection({ workspaceId }: { workspaceId: number }) {
+  const [mail, setMail] = useState<ReminderEmail | null>(null)
+  const [choice, setChoice] = useState<ReminderEmailChoice>('Off')
   const [people, setPeople] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const show = (found: SignInMail) => {
+  const show = (found: ReminderEmail) => {
     setMail(found)
     setChoice(found.choice)
     setPeople(found.people)
   }
 
   useEffect(() => {
-    getSignInMail(workspaceId)
+    getReminderEmail(workspaceId)
       .then(show)
       .catch((e: Error) => setError(e.message))
   }, [workspaceId])
@@ -35,7 +35,7 @@ export function SignInMailSection({ workspaceId }: { workspaceId: number }) {
     setError(null)
     setNotice(null)
     try {
-      show(await saveSignInMail(workspaceId, choice, choice === 'Named' ? people : []))
+      show(await saveReminderEmail(workspaceId, choice, choice === 'Named' ? people : []))
       setNotice('Saved.')
     } catch (e) {
       setError((e as Error).message)
@@ -49,7 +49,7 @@ export function SignInMailSection({ workspaceId }: { workspaceId: number }) {
   return (
     <section>
       <div className="section-head">
-        <h2>Sign-in mail</h2>
+        <h2>Session expiry reminder email</h2>
       </div>
       <p className="muted">Who Nexus mails when a connection's sign-in is about to end, and again once it has ended.</p>
       {mail && !mail.mailReady && (
@@ -61,7 +61,7 @@ export function SignInMailSection({ workspaceId }: { workspaceId: number }) {
             <legend>Mail</legend>
             {CHOICES.map((c) => (
               <label key={c.value} className="check">
-                <input type="radio" name="sign-in-mail" value={c.value} checked={choice === c.value} onChange={() => setChoice(c.value)} />
+                <input type="radio" name="reminder-email" value={c.value} checked={choice === c.value} onChange={() => setChoice(c.value)} />
                 {c.label}
               </label>
             ))}

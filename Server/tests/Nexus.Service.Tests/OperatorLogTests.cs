@@ -293,7 +293,7 @@ public sealed class OperatorLogTests
             $"/connections/{connection.GetProperty("id").GetInt32()}/syncs",
             new { destinationId = destination.GetProperty("id").GetInt32(), streams = new[] { new { stream = FakeSource.StreamName, table = "orders", mode = "FullRefresh" } } }))
             .EnsureSuccessStatusCode();
-        (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/sign-in-apps/{OAuthApps.SchwabId}", new { clientId = "abcd1234", clientSecret = "s3cret" }))
+        (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/providers/{OAuthApps.SchwabId}", new { clientId = "abcd1234", clientSecret = "s3cret" }))
             .EnsureSuccessStatusCode();
         await using (var db = _factory.NewContext())
         {
@@ -341,7 +341,7 @@ public sealed class OperatorLogTests
         texts.ShouldContain("Destination http://scry.test/ingest was added to app Scry, sending key scry_good…, named Nexus.");
         texts.ShouldContain("Connection Shop (Fake) was added.");
         texts.ShouldContain($"Sync orders was added. It reads stream shop.orders of Shop (Fake) in full, {Into}.");
-        texts.ShouldContain("The Charles Schwab sign-in app was set, with a key ending 1234.");
+        texts.ShouldContain("The Charles Schwab provider was set up, with a key ending 1234.");
         texts.ShouldContain("Destination http://scry.test/ingest of app Scry refused its key: The push API refused the key. Send a push API key.");
         texts.ShouldContain(t => t.StartsWith("App Scry revoked its own key nexus_", StringComparison.Ordinal));
         texts.ShouldContain("Scry at localhost:6161 asked to link, and was declined.");

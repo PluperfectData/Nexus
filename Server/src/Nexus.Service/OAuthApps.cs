@@ -79,7 +79,7 @@ public sealed class OAuthApps(
             : CallbackFor(connector) is null
                 ? NoCallback
                 : await ClientForAsync(connector, workspaceId, ct) is null
-                    ? $"This workspace has no {found.Spec.DisplayName} app yet. Add it under Sign-in apps on the workspace page in Nexus."
+                    ? $"This workspace has no {found.Spec.DisplayName} app yet. Add it under Providers on the workspace page in Nexus."
                     : null;
 
     /// <summary>The provider's sign-in page, which returns to the callback with <paramref name="state"/>.</summary>

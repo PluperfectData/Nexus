@@ -9,7 +9,7 @@ namespace Nexus.Service.Controllers;
 /// characters of its key, to tell apps apart. <c>CallbackUrl</c> is the address to register on the app, and
 /// <c>Problem</c> why the workspace cannot sign in to the provider yet.
 /// </summary>
-public sealed record SignInAppView(
+public sealed record ProviderView(
     string Connector,
     string Name,
     bool Set,
@@ -20,15 +20,15 @@ public sealed record SignInAppView(
     string? Problem);
 
 /// <summary>An app's key and secret. A blank one keeps the one stored.</summary>
-public sealed record SignInAppRequest(string? ClientId, string? ClientSecret);
+public sealed record ProviderRequest(string? ClientId, string? ClientSecret);
 
 /// <summary>The apps a workspace signs in to providers through, such as its Schwab app, for its members.</summary>
 [ApiController]
-[Route("workspaces/{workspaceId:int}/sign-in-apps")]
-public sealed class SignInAppsController(NexusDbContext db, Access access, OAuthApps apps, Secrets secrets, OperatorLog log, TimeProvider time) : ControllerBase
+[Route("workspaces/{workspaceId:int}/providers")]
+public sealed class ProvidersController(NexusDbContext db, Access access, OAuthApps apps, Secrets secrets, OperatorLog log, TimeProvider time) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<SignInAppView>>> List(int workspaceId, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<ProviderView>>> List(int workspaceId, CancellationToken ct)
     {
         if (!await access.CanSeeAsync(User, workspaceId, ct))
         {
@@ -36,7 +36,7 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
         }
 
         var stored = await db.ProviderApps.Where(a => a.WorkspaceId == workspaceId).ToListAsync(ct);
-        var views = new List<SignInAppView>();
+        var views = new List<ProviderView>();
         foreach (var connector in apps.SignInConnectors)
         {
             views.Add(await ViewAsync(connector, workspaceId, stored.FirstOrDefault(a => a.Connector == connector.Spec.Id), ct));
@@ -47,7 +47,7 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
 
     /// <summary>Sets the workspace's app for the connector, or replaces it.</summary>
     [HttpPut("{connector}")]
-    public async Task<ActionResult<SignInAppView>> Set(int workspaceId, string connector, SignInAppRequest request, CancellationToken ct)
+    public async Task<ActionResult<ProviderView>> Set(int workspaceId, string connector, ProviderRequest request, CancellationToken ct)
     {
         if (!await access.CanSeeAsync(User, workspaceId, ct) || apps.SignInConnectors.FirstOrDefault(c => c.Spec.Id == connector) is not { } found)
         {
@@ -83,7 +83,7 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
         {
             app = new ProviderApp { WorkspaceId = workspaceId, Connector = connector, ClientId = key, ClientSecret = secrets.ProtectText(secret) };
             db.ProviderApps.Add(app);
-            log.Info($"The {found.Spec.DisplayName} sign-in app was set, with a key ending {Ending(key)}.", LogPlace.In(workspaceId));
+            log.Info($"The {found.Spec.DisplayName} provider was set up, with a key ending {Ending(key)}.", LogPlace.In(workspaceId));
         }
         else
         {
@@ -103,7 +103,7 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
                 (true, false) => "its key was replaced",
                 _ => "its secret was replaced",
             };
-            log.Info($"The {found.Spec.DisplayName} sign-in app was changed: {changed}. Its key ends {Ending(app.ClientId)}.", LogPlace.In(workspaceId));
+            log.Info($"The {found.Spec.DisplayName} provider was changed: {changed}. Its key ends {Ending(app.ClientId)}.", LogPlace.In(workspaceId));
         }
 
         app.UpdatedAt = time.GetUtcNow().UtcDateTime;
@@ -127,18 +127,18 @@ public sealed class SignInAppsController(NexusDbContext db, Access access, OAuth
         }
 
         var name = apps.SignInConnectors.FirstOrDefault(c => c.Spec.Id == connector)?.Spec.DisplayName ?? connector;
-        log.Info($"The {name} sign-in app was removed. Its connections stop syncing until another is set.", LogPlace.In(workspaceId));
+        log.Info($"The {name} provider was removed. Its connections stop syncing until another is set.", LogPlace.In(workspaceId));
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
 
     private static string Ending(string key) => key[^Math.Min(4, key.Length)..];
 
-    private async Task<SignInAppView> ViewAsync(ISourceConnector connector, int workspaceId, ProviderApp? stored, CancellationToken ct)
+    private async Task<ProviderView> ViewAsync(ISourceConnector connector, int workspaceId, ProviderApp? stored, CancellationToken ct)
     {
         var configured = apps.ConfiguredClient(connector.Spec.Id);
         var key = configured?.ClientId ?? stored?.ClientId;
-        return new SignInAppView(
+        return new ProviderView(
             connector.Spec.Id,
             connector.Spec.DisplayName,
             key is not null,

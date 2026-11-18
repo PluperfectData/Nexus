@@ -142,7 +142,7 @@ export interface Connector {
   description: string
   auth: string
   fields: Field[]
-  /** Why it cannot be connected in the workspace asking yet, such as a sign-in app not set there. */
+  /** Why it cannot be connected in the workspace asking yet, such as a provider not set up there. */
   notReady: string | null
 }
 
@@ -150,7 +150,7 @@ export interface Connector {
  * A workspace's app for a provider it signs in to, such as its Schwab app. The secret is never answered: `keyEnding` is
  * the last four characters of the key. `problem` says why the workspace cannot sign in to the provider yet.
  */
-export interface SignInApp {
+export interface Provider {
   connector: string
   name: string
   set: boolean
@@ -191,11 +191,11 @@ export interface Connection {
   createdAt: string
 }
 
-export type SignInMailChoice = 'Off' | 'Everyone' | 'Admins' | 'Named'
+export type ReminderEmailChoice = 'Off' | 'Everyone' | 'Admins' | 'Named'
 
 /** Who a workspace mails about its sign-ins. `people` are those named, among `candidates`: its members and the admins. */
-export interface SignInMail {
-  choice: SignInMailChoice
+export interface ReminderEmail {
+  choice: ReminderEmailChoice
   people: number[]
   candidates: { id: number; email: string; isAdmin: boolean }[]
   mailReady: boolean
@@ -311,18 +311,18 @@ export const startSignIn = (workspaceId: number, name: string, connector: string
 /** Starts a new sign-in for a connection, which starts its clock over. */
 export const renewSignIn = (id: number) => request<{ url: string }>(`/connections/${id}/sign-in`, 'POST')
 
-export const getSignInMail = (workspaceId: number) => request<SignInMail>(`/workspaces/${workspaceId}/sign-in-mail`)
-export const saveSignInMail = (workspaceId: number, choice: SignInMailChoice, people: number[]) =>
-  request<SignInMail>(`/workspaces/${workspaceId}/sign-in-mail`, 'PUT', { choice, people })
+export const getReminderEmail = (workspaceId: number) => request<ReminderEmail>(`/workspaces/${workspaceId}/reminder-email`)
+export const saveReminderEmail = (workspaceId: number, choice: ReminderEmailChoice, people: number[]) =>
+  request<ReminderEmail>(`/workspaces/${workspaceId}/reminder-email`, 'PUT', { choice, people })
 
 export const removeConnection = (id: number) => request<null>(`/connections/${id}`, 'DELETE')
 
-export const listSignInApps = (workspaceId: number) => request<SignInApp[]>(`/workspaces/${workspaceId}/sign-in-apps`)
+export const listProviders = (workspaceId: number) => request<Provider[]>(`/workspaces/${workspaceId}/providers`)
 /** Sets the workspace's app for a provider. A blank key or secret keeps the one stored. */
-export const saveSignInApp = (workspaceId: number, connector: string, clientId: string, clientSecret: string) =>
-  request<SignInApp>(`/workspaces/${workspaceId}/sign-in-apps/${connector}`, 'PUT', { clientId, clientSecret })
-export const removeSignInApp = (workspaceId: number, connector: string) =>
-  request<null>(`/workspaces/${workspaceId}/sign-in-apps/${connector}`, 'DELETE')
+export const saveProvider = (workspaceId: number, connector: string, clientId: string, clientSecret: string) =>
+  request<Provider>(`/workspaces/${workspaceId}/providers/${connector}`, 'PUT', { clientId, clientSecret })
+export const removeProvider = (workspaceId: number, connector: string) =>
+  request<null>(`/workspaces/${workspaceId}/providers/${connector}`, 'DELETE')
 export const listStreams = (connectionId: number) => request<Stream[]>(`/connections/${connectionId}/streams`)
 
 export const listSyncs = (workspaceId: number) => request<Sync[]>(`/workspaces/${workspaceId}/syncs`)

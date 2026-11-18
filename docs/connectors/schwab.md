@@ -106,7 +106,7 @@ The id comes from the `Location` header, and is null when Schwab sends none.
 
 ## Registering the app
 
-Each workspace signs in through its own Schwab app, set under Sign-in apps on the workspace page
+Each workspace signs in through its own Schwab app, set under Providers on the workspace page
 ([the service](../service.md)). Register the app on Schwab's developer portal with the callback that section shows,
 `https://127.0.0.1:6164/oauth/callback` locally, as its own entry and with no trailing slash. Any other callback, a
 placeholder included, makes Schwab's sign-in page fail with "We are unable to complete your request." Changing the
