@@ -32,7 +32,7 @@ Nexus is and get it running, start with the [README](../README.md).
 - **[CSV](connectors/csv.md)**: reading a CSV file
 - **[MySQL, PostgreSQL, and SQL Server](connectors/sql.md)**: reading tables and views from a database
 - **[Charles Schwab](connectors/schwab.md)**: balances, positions, transactions, orders, and market data, and placing orders
-  - [The sign-in tool](connectors/schwab.md#the-sign-in-tool)
+  - [Registering the app](connectors/schwab.md#registering-the-app)
 - **[DuckDB](connectors/duckdb.md)**: writing streams into a DuckDB file
 - **[Push API](connectors/push.md)**: writing streams through an app's push API, such as Scry's
 - **[Using the connectors in code](connectors/usage.md)**: reading into memory, piping a source into a destination, and running an action

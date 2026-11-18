@@ -23,7 +23,6 @@ records in memory, or piped into a destination.
 | `Server/src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
 | `Server/src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
 | `Client` | The service's pages, a React client: the installer, signing in, workspaces, and for admins, users and settings |
-| `Server/tools/Nexus.Schwab.SignIn` | A console tool that signs in to Schwab and saves the tokens to user secrets |
 | `Server/tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |
 | `Server/tests/Nexus.Csv.Tests` | NUnit and Shouldly, against in-memory files |
 | `Server/tests/Nexus.DuckDb.Tests` | NUnit and Shouldly, against a temp DuckDB file |

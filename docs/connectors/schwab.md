@@ -104,53 +104,11 @@ The id comes from the `Location` header, and is null when Schwab sends none.
 | An action sent with no answer: a 5xx, a timeout, a dropped connection | `OutcomeUnknown` |
 | Any other 4xx, with Schwab's message; a missing or unreadable value | `SourceError` |
 
-## The sign-in tool
+## Registering the app
 
-`Server/tools/Nexus.Schwab.SignIn` signs in to Schwab in the browser and saves the tokens to its user secrets, id
-`Nexus.Schwab.SignIn`. It is not packed.
-
-First, register the app on Schwab's developer portal with the callback URL the tool listens on:
-`https://127.0.0.1` with a port, such as `https://127.0.0.1:8182`, as its own entry and with no trailing slash.
-Any other callback, a placeholder included, makes Schwab's sign-in page fail with "We are unable to complete
-your request." Changing the callback sends the app back for approval, which can take days. Sign-in works only
-while the app shows **Ready For Use**.
-
-| User secret | Set by | Holds |
-|---|---|---|
-| `Schwab:AppKey` | You | The app key from Schwab's developer portal |
-| `Schwab:AppSecret` | You | The app secret |
-| `Schwab:CallbackUrl` | You | The app's callback URL, exactly as registered: `https://127.0.0.1`, with an optional port |
-| `Schwab:AccessToken` | The tool | |
-| `Schwab:RefreshToken` | The tool | |
-| `Schwab:ExpiresAt` | The tool | When the access token expires, ISO 8601 |
-| `Schwab:SignedInAt` | The tool | When the sign-in happened. Schwab ends it 7 days later. |
-
-```bash
-dotnet user-secrets set Schwab:AppKey "<app key>" --id Nexus.Schwab.SignIn
-```
-
-```bash
-dotnet run --project Server/tools/Nexus.Schwab.SignIn
-```
-
-- The tool listens on 127.0.0.1 at the callback URL's port, with a self-signed certificate made at run time,
-  and opens Schwab's sign-in page. The browser warns about the certificate; continue past it.
-- It checks the returned `state`, exchanges the code with HTTP Basic auth, and writes the four token keys.
-  Other keys in the file are kept, and the file is replaced in one move.
-- It waits 5 minutes for the redirect, and never prints a token.
-
-With `read`, the tool runs the connector against Schwab with the saved sign-in. It reads every stream into a
-DuckDB file, prints each stream's row count, and prints any warning the read sends. It only reads; orders stay off.
-
-```bash
-dotnet run --project Server/tools/Nexus.Schwab.SignIn -- read --symbols 'AAPL,SPY' --movers '$SPX'
-```
-
-- `--from yyyy-MM-dd` sets where transactions and candles start, a year back by default. `--out path.duckdb` sets
-  the file, `%LOCALAPPDATA%\Nexus\schwab.duckdb` by default.
-- `--symbols`, `--candles`, and `--movers` set the settings of the same names. Without `--symbols`, quotes and
-  candles cover only the account's holdings; without `--movers`, no movers are read. In PowerShell, quote an index
-  in single quotes, since `"$SPX"` reads a variable.
-- Balances, positions, quotes, and movers are appended, a snapshot each run; transactions, orders, and candles are
-  upserted by their keys, so a run can be repeated into the same file.
-- Tokens Schwab refreshes during the read are saved back to user secrets the same way the sign-in saves them.
+Each workspace signs in through its own Schwab app, set under Sign-in apps on the workspace page
+([the service](../service.md)). Register the app on Schwab's developer portal with the callback that section shows,
+`https://127.0.0.1:6164/oauth/callback` locally, as its own entry and with no trailing slash. Any other callback, a
+placeholder included, makes Schwab's sign-in page fail with "We are unable to complete your request." Changing the
+callback sends the app back for approval, which can take days. Sign-in works only while the app shows
+**Ready For Use**.

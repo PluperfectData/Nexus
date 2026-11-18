@@ -243,12 +243,6 @@ licenses, in its own README.
 | [Pomelo.EntityFrameworkCore.MySql](https://www.nuget.org/packages/Pomelo.EntityFrameworkCore.MySql) | EF Core's MySQL provider | [MIT](https://spdx.org/licenses/MIT.html) |
 | [Serilog.AspNetCore](https://www.nuget.org/packages/Serilog.AspNetCore) | The developer log | [Apache-2.0](https://spdx.org/licenses/Apache-2.0.html) |
 
-### The Schwab sign-in tool (`Server/tools/Nexus.Schwab.SignIn`)
-
-| Package | Used for | License |
-|---|---|---|
-| [Microsoft.Extensions.Configuration.UserSecrets](https://www.nuget.org/packages/Microsoft.Extensions.Configuration.UserSecrets) | Keeping the tokens in user secrets | [MIT](https://spdx.org/licenses/MIT.html) |
-
 ### The tests (`Server/tests`)
 
 | Package | Used for | License |
