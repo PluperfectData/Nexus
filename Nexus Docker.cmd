@@ -40,9 +40,11 @@ if "%FILE%"=="compose.both.yaml" call :install scry-api Scry
 
 echo.
 echo Nexus is running at https://localhost:6165. Docker Desktop keeps it running, and can stop it.
+echo Nexus's Mailpit, which keeps the mail Nexus sends until Postmark is set up, is at http://localhost:6168.
 start "" https://localhost:6165
 if "%FILE%"=="compose.both.yaml" (
   echo Scry is running at https://localhost:6160.
+  echo Scry's Mailpit, which keeps the mail Scry sends until Postmark is set up, is at http://localhost:6162.
   start "" https://localhost:6160
 )
 pause

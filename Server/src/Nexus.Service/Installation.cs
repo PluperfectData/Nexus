@@ -51,11 +51,6 @@ public sealed partial class Installation(
             _problem = "Nexus cannot decrypt its database's password, since the keys in its data folder changed. Enter the password again.";
         }
 
-        if (instance.MailFolderIgnored)
-        {
-            LogMailFolderIgnored(logger);
-        }
-
         if (!await IsInstalledAsync(ct))
         {
             Announce();
@@ -196,8 +191,4 @@ public sealed partial class Installation(
     private static partial void LogRecovery(ILogger logger, string page, string code);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Nexus cannot open its database: {Problem}")]
-    private static partial void LogUnreachable(ILogger logger, string problem);
-
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Mail:PickupDirectory is set, but Nexus writes mail to files only in a Debug build running as Development. Mail goes through Postmark once it is set up on the Settings page.")]
-    private static partial void LogMailFolderIgnored(ILogger logger);
-}
+    private static partial void LogUnreachable(ILogger logger, string problem);}

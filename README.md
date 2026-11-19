@@ -136,6 +136,7 @@ You'll run the Nexus service and its web client from their code, then set Nexus 
 - [Node.js 24](https://nodejs.org/)
 - [MySQL 8.4](https://dev.mysql.com/downloads/mysql/), with a user that can create Nexus's database
 - [Git](https://git-scm.com/)
+- [Mailpit](https://mailpit.axllent.org/), which shows the mail Nexus sends while you work on it
 
 #### 1. Get the code
 
@@ -168,6 +169,14 @@ npm run build --prefix Pluperfect.Jwt/client
 
 #### 3. Start the service
 
+Start Mailpit first, in a terminal of its own. It keeps the mail Nexus sends, and shows it at `http://localhost:8025`:
+
+```bash
+mailpit
+```
+
+Then, in another terminal, from the same folder:
+
 ```bash
 dotnet dev-certs https
 dotnet run --project Pluperfect.Data/Nexus/Server/src/Nexus.Service
@@ -179,7 +188,7 @@ itself listens on `http://localhost:6163`.
 
 #### 4. Start the client
 
-In a second terminal, from the same folder:
+In a third terminal, from the same folder:
 
 ```bash
 npm install --prefix Pluperfect.Data/Nexus/Client
@@ -193,8 +202,8 @@ Open `http://localhost:6165/install`. The installer asks, in turn, for:
 1. **Your database:** the MySQL server's address, a name for the database, and the user. Nexus makes the database and
    its tables.
 2. **The address** people open Nexus at, already filled in for your machine.
-3. **Mail**, which you can skip. On your own machine, Nexus writes each mail to a file in
-   `Pluperfect.Data/Nexus/Server/src/Nexus.Service/data/mail` instead of sending it.
+3. **Mail**, already going to Mailpit, so the first admin may skip the password. Choose Postmark here to send real
+   mail.
 4. **The first admin:** your email, and a password if you want one.
 5. **The callback address** providers send people back to after they sign in, already filled in for your machine.
 

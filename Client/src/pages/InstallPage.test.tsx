@@ -36,17 +36,27 @@ jest.mock('../api', () => ({
 
 const mailOff: MailSettings = {
   transport: 'None',
+  choice: null,
+  transportConfigured: false,
   tokenSet: false,
   tokenConfigured: false,
   from: null,
   fromConfigured: false,
   fromName: 'Nexus',
   fromNameConfigured: false,
-  folder: null,
+  mailpitUrl: null,
+  mailpitConfigured: false,
+  mailpitInbox: null,
 }
 
-// Development's mail: written to files, as configuration says.
-const mailToFiles: MailSettings = { ...mailOff, transport: 'Files', folder: 'D:\\nexus\\data\\mail' }
+// Development's mail: to Mailpit, as configuration says.
+const mailToMailpit: MailSettings = {
+  ...mailOff,
+  transport: 'Mailpit',
+  mailpitUrl: 'http://localhost:8025',
+  mailpitConfigured: true,
+  mailpitInbox: 'http://localhost:8025',
+}
 
 const founder: Me = { signedIn: true, id: 1, email: 'founder@acme.test', isAdmin: true, hasPassword: true }
 
@@ -71,16 +81,7 @@ const settings: Settings = {
   callbackOriginConfigured: false,
   callbackUrl: null,
   callbackSuggestion: 'https://127.0.0.1:6164',
-  mail: {
-    transport: 'None',
-    tokenSet: false,
-    tokenConfigured: false,
-    from: null,
-    fromConfigured: false,
-    fromName: 'Nexus',
-    fromNameConfigured: false,
-    folder: null,
-  },
+  mail: mailOff,
   database: { host: 'localhost', port: 3306, name: 'nexus', user: 'nexus' },
   databaseConfigured: false,
   logDays: 30,
@@ -133,12 +134,14 @@ it('takes a page on this machine through the database, the address, mail, and th
 })
 
 it('makes the first admin with no password once mail works, to sign in by mailed links', async () => {
-  jest.mocked(getInstall).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: mailToFiles }))
+  jest.mocked(getInstall).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: mailToMailpit }))
   jest.mocked(installAdmin).mockResolvedValue({ ...founder, hasPassword: false })
   jest.mocked(getSettings).mockResolvedValue(settings)
   renderPage()
 
-  expect(await screen.findByText(/writes mail to files in D:\\nexus\\data\\mail/)).toBeInTheDocument()
+  expect(await screen.findByText(/Mail goes to Mailpit, which delivers nothing/)).toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'http://localhost:8025' })).toHaveAttribute('href', 'http://localhost:8025')
+  expect(screen.getByLabelText("Mailpit's address")).toBeDisabled()
   await userEvent.click(screen.getByRole('button', { name: 'Continue' }))
   expect(screen.getByLabelText('Password (optional)')).not.toBeRequired()
   expect(screen.getByLabelText('The same password again (optional)')).not.toBeRequired()
@@ -150,26 +153,56 @@ it('makes the first admin with no password once mail works, to sign in by mailed
   expect(await screen.findByText('Step 5 of 5: Callback')).toBeInTheDocument()
 })
 
-it('goes back to mail files after testing Postmark in a debug build', async () => {
-  const postmark: MailSettings = { ...mailToFiles, transport: 'Postmark', tokenSet: true, from: 'test@acme.test' }
+it('turns mail off, then chooses Mailpit again with nothing to retype', async () => {
+  const postmark: MailSettings = { ...mailToMailpit, transport: 'Postmark', choice: 'Postmark', tokenSet: true, from: 'test@acme.test' }
   jest.mocked(getInstall).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: postmark }))
-  jest.mocked(installMailOff).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: mailToFiles }))
+  jest.mocked(installMailOff).mockResolvedValue(view({ stage: 'Admin', mailSettings: { ...postmark, transport: 'None', choice: 'Off' } }))
+  jest.mocked(installMail).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: { ...mailToMailpit, choice: 'Mailpit', from: 'test@acme.test' } }))
   jest.spyOn(window, 'confirm').mockReturnValue(true)
   renderPage()
 
-  expect(await screen.findByText(/Mail goes through Postmark/)).toBeInTheDocument()
-  await userEvent.click(screen.getByRole('button', { name: 'Use mail files again' }))
+  expect(await screen.findByText('Mail goes through Postmark.')).toBeInTheDocument()
+  await userEvent.click(screen.getByLabelText('Nowhere: mail is off'))
+  await userEvent.click(screen.getByRole('button', { name: 'Turn mail off' }))
+  expect(await screen.findByText('Mail is off.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Continue without mail' })).toBeInTheDocument()
+  await userEvent.click(screen.getByLabelText('Mailpit, which keeps every message for you to read'))
+  await userEvent.click(screen.getByRole('button', { name: 'Save mail' }))
 
-  expect(window.confirm).toHaveBeenCalledWith('Stop sending through Postmark? Mail goes to files in D:\\nexus\\data\\mail again.')
   expect(installMailOff).toHaveBeenCalledWith(null)
-  expect(await screen.findByText('Mail goes to files again.')).toBeInTheDocument()
-  expect(screen.getByText(/This debug build writes mail to files/)).toBeInTheDocument()
+  expect(installMail).toHaveBeenCalledWith(null, {
+    transport: 'Mailpit',
+    serverToken: '',
+    from: 'test@acme.test',
+    fromName: 'Nexus',
+    mailpitUrl: 'http://localhost:8025',
+  })
+  expect(await screen.findByText('Mail now goes to Mailpit. Send a test mail to check it.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()
+})
+
+it('sends to a Mailpit the page names, and says where to read the test mail', async () => {
+  const mailpit: MailSettings = { ...mailOff, transport: 'Mailpit', choice: 'Mailpit', mailpitUrl: 'http://localhost:8025', mailpitInbox: 'http://localhost:8025' }
+  jest.mocked(getInstall).mockResolvedValue(view({ stage: 'Admin', mailSettings: mailOff }))
+  jest.mocked(installMail).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: mailpit }))
+  jest.mocked(installTestMail).mockResolvedValue({ sentTo: 'founder@acme.test', transport: 'Mailpit', inbox: 'http://localhost:8025' })
+  renderPage()
+
+  await userEvent.click(await screen.findByLabelText('Mailpit, which keeps every message for you to read'))
+  expect(screen.getByLabelText('From address (optional)')).not.toBeRequired()
+  await userEvent.type(screen.getByLabelText("Mailpit's address"), 'http://localhost:8025')
+  await userEvent.click(screen.getByRole('button', { name: 'Save mail' }))
+  await userEvent.type(await screen.findByLabelText('Send a test mail to'), 'founder@acme.test')
+  await userEvent.click(screen.getByRole('button', { name: 'Send a test mail' }))
+
+  expect(installMail).toHaveBeenCalledWith(null, expect.objectContaining({ transport: 'Mailpit', mailpitUrl: 'http://localhost:8025', from: '' }))
+  expect(await screen.findByText('Sent a test mail to founder@acme.test. Read it in Mailpit at http://localhost:8025.')).toBeInTheDocument()
 })
 
 it('saves mail in the installer, and sends a test mail to the address given', async () => {
   jest.mocked(getInstall).mockResolvedValue(view({ stage: 'Admin', mailSettings: mailOff }))
   jest.mocked(installMail).mockResolvedValue(view({ stage: 'Admin', mail: true, mailSettings: { ...mailOff, transport: 'Postmark', tokenSet: true, from: 'nexus@acme.test' } }))
-  jest.mocked(installTestMail).mockResolvedValue({ sentTo: 'founder@acme.test', transport: 'Postmark', folder: null })
+  jest.mocked(installTestMail).mockResolvedValue({ sentTo: 'founder@acme.test', transport: 'Postmark', inbox: null })
   renderPage()
 
   await userEvent.type(await screen.findByLabelText('Postmark server token'), 'postmark-token')
@@ -178,7 +211,13 @@ it('saves mail in the installer, and sends a test mail to the address given', as
   await userEvent.type(await screen.findByLabelText('Send a test mail to'), 'founder@acme.test')
   await userEvent.click(screen.getByRole('button', { name: 'Send a test mail' }))
 
-  expect(installMail).toHaveBeenCalledWith(null, 'postmark-token', 'nexus@acme.test', 'Nexus')
+  expect(installMail).toHaveBeenCalledWith(null, {
+    transport: 'Postmark',
+    serverToken: 'postmark-token',
+    from: 'nexus@acme.test',
+    fromName: 'Nexus',
+    mailpitUrl: '',
+  })
   expect(installTestMail).toHaveBeenCalledWith(null, 'founder@acme.test')
   expect(await screen.findByText('Sent a test mail to founder@acme.test.')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument()

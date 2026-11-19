@@ -94,7 +94,7 @@ public sealed partial class InstallTests
     [Test]
     public async Task Behind_a_proxy_a_request_forwarded_over_https_gets_secure_cookies_outside_development()
     {
-        using var factory = new ServiceFactory(mailToFiles: false, proxied: true);
+        using var factory = new ServiceFactory(withMailpit: false, proxied: true);
         using var production = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"));
         using var client = production.CreateDefaultClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, "/auth/csrf");
@@ -266,11 +266,11 @@ public sealed partial class InstallTests
     [Test]
     public async Task The_installers_mail_needs_its_access_and_closes_once_the_instance_is_set_up()
     {
-        using var factory = new ServiceFactory(installed: false, mailToFiles: false);
+        using var factory = new ServiceFactory(installed: false, withMailpit: false);
         using var browser = factory.NewBrowser();
         (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
         (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
-        var mail = new { serverToken = FakePostmark.Token, from = "nexus@acme.test", fromName = "Acme Nexus" };
+        var mail = new { transport = "Postmark", serverToken = FakePostmark.Token, from = "nexus@acme.test", fromName = "Acme Nexus" };
 
         using var bare = await SendAsync(browser, HttpMethod.Put, "/install/mail", mail);
         using var saved = await SendAsync(browser, HttpMethod.Put, "/install/mail", mail, local: true);
@@ -297,7 +297,7 @@ public sealed partial class InstallTests
     [Test]
     public async Task The_first_admin_needs_a_password_while_mail_is_off()
     {
-        using var factory = new ServiceFactory(installed: false, mailToFiles: false);
+        using var factory = new ServiceFactory(installed: false, withMailpit: false);
         using var browser = factory.NewBrowser();
         (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
         (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
@@ -310,9 +310,8 @@ public sealed partial class InstallTests
         made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
     }
 
-#if DEBUG
     [Test]
-    public async Task With_mail_written_to_files_the_first_admin_needs_no_password_and_signs_in_by_link()
+    public async Task With_Mailpit_the_first_admin_needs_no_password_and_signs_in_by_link()
     {
         using var factory = new ServiceFactory(installed: false);
         using var browser = factory.NewBrowser();
@@ -323,17 +322,36 @@ public sealed partial class InstallTests
         using var made = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = "" }, local: true);
         using var later = factory.NewBrowser();
         (await later.SendAsync(HttpMethod.Post, "/auth/link", new { email = "founder@acme.test" })).StatusCode.ShouldBe(HttpStatusCode.Accepted);
-        var link = Browser.MailTo(factory.MailDirectory, "founder@acme.test").Single();
+        var link = Browser.MailpitTo(factory.Mailpit, "founder@acme.test").Single();
         using var redeemed = await later.SendAsync(HttpMethod.Post, "/auth/link/redeem", new { token = Browser.LinkToken(link) });
 
         view.GetProperty("mail").GetBoolean().ShouldBeTrue();
-        view.GetProperty("mailSettings").GetProperty("transport").GetString().ShouldBe("Files");
+        view.GetProperty("mailSettings").GetProperty("transport").GetString().ShouldBe("Mailpit");
+        view.GetProperty("mailSettings").GetProperty("mailpitInbox").GetString().ShouldBe(FakeMailpit.Address);
         made.StatusCode.ShouldBe(HttpStatusCode.OK, await made.Content.ReadAsStringAsync());
         (await browser.GetAsync<JsonElement>("/auth/me")).GetProperty("isAdmin").GetBoolean().ShouldBeTrue();
+        link.GetProperty("From").GetProperty("Email").GetString().ShouldBe("nexus@localhost");
         redeemed.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await later.GetAsync<JsonElement>("/auth/me")).GetProperty("email").GetString().ShouldBe("founder@acme.test");
     }
-#endif
+
+    [Test]
+    public async Task A_first_admin_without_a_password_waits_for_Mailpit_to_answer()
+    {
+        using var factory = new ServiceFactory(installed: false);
+        using var browser = factory.NewBrowser();
+        (await PostAsync(browser, "/install/database", Database, local: true)).EnsureSuccessStatusCode();
+        (await PostAsync(browser, "/install/address", new { clientOrigin = ServiceFactory.ClientOrigin }, local: true)).EnsureSuccessStatusCode();
+        factory.Mailpit.Down = true;
+
+        using var refused = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = "" }, local: true);
+        using var withPassword = await PostAsync(browser, "/install/admin", new { email = "founder@acme.test", password = Browser.Password }, local: true);
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await Browser.DetailAsync(refused)).ShouldBe(
+            $"Mailpit isn't answering at {FakeMailpit.Address}, so a sign-in link would go nowhere. Start Mailpit, or choose a password.");
+        withPassword.StatusCode.ShouldBe(HttpStatusCode.OK, await withPassword.Content.ReadAsStringAsync());
+    }
 
     [Test]
     public async Task Make_an_admin_with_no_password_keeps_the_users_own()

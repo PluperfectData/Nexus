@@ -116,6 +116,14 @@ try {
         if (-not $mysqlBin) { throw 'MySQL was installed but not found under C:\Program Files\MySQL.' }
     }
 
+    # Mailpit keeps the mail Nexus sends, for reading on its own page, until Postmark is set up.
+    $mailpit = Get-Command mailpit -ErrorAction SilentlyContinue
+    if ($mailpit) { Write-Host 'Mailpit is installed.' }
+    else {
+        Install-Program 'axllent.mailpit' 'Mailpit'
+        $mailpit = Get-Command mailpit -ErrorAction SilentlyContinue
+    }
+
     Get-Checkout 'Pluperfect.Jwt' $jwt 'https://github.com/mnwachukwu/Pluperfect.Jwt.git'
     Get-Checkout 'Pluperfect.Mail' $mail 'https://github.com/mnwachukwu/Pluperfect.Mail.git'
 
@@ -153,6 +161,7 @@ try {
     $tools = [ordered]@{
         dotnet = (Get-Command dotnet).Source
         mysqlBin = $mysqlBin
+        mailpit = if ($mailpit) { $mailpit.Source } else { $null }
     }
     $toolsFile = Join-Path $data 'install.json'
     [IO.File]::WriteAllText("$toolsFile.tmp", ($tools | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))

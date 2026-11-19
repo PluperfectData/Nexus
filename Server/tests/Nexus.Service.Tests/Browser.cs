@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using MimeKit;
 
 namespace Nexus.Service.Tests;
 
@@ -75,25 +74,17 @@ public sealed partial class Browser(HttpClient client, CookieContainer cookies) 
     public static async Task<string?> DetailAsync(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<JsonElement>()).TryGetProperty("detail", out var detail) ? detail.GetString() : null;
 
-    /// <summary>The mail written to the pickup folder for an address, newest last.</summary>
-    public static List<MimeMessage> MailTo(string directory, string email) =>
-        !Directory.Exists(directory)
-            ? []
-            : [.. Directory.GetFiles(directory, "*.eml")
-                .Select(path => (Written: File.GetLastWriteTimeUtc(path), Message: MimeMessage.Load(path)))
-                .Where(mail => mail.Message.To.Mailboxes.Any(box => box.Address == email))
-                .OrderBy(mail => mail.Written)
-                .Select(mail => mail.Message)];
-
-    /// <summary>The token after the <c>#</c> of the sign-in link in a mail.</summary>
-    public static string LinkToken(MimeMessage mail) => LinkPattern().Match(mail.TextBody ?? string.Empty).Groups[1].Value;
+    /// <summary>The mail the fake Mailpit kept for an address, oldest first.</summary>
+    internal static List<JsonElement> MailpitTo(FakeMailpit mailpit, string email) =>
+        [.. mailpit.Sent.Where(mail => mail.GetProperty("To")[0].GetProperty("Email").GetString() == email)];
 
     /// <summary>The mail the fake Postmark sent an address, oldest first.</summary>
     internal static List<JsonElement> PostmarkTo(FakePostmark postmark, string email) =>
         [.. postmark.Sent.Where(mail => mail.GetProperty("To").GetString() == email)];
 
-    /// <summary>The token after the <c>#</c> of the sign-in link in a mail the fake Postmark sent.</summary>
-    public static string LinkToken(JsonElement mail) => LinkPattern().Match(mail.GetProperty("TextBody").GetString() ?? string.Empty).Groups[1].Value;
+    /// <summary>The token after the <c>#</c> of the sign-in link in a mail the fake Postmark or the fake Mailpit took.</summary>
+    public static string LinkToken(JsonElement mail) =>
+        LinkPattern().Match((mail.TryGetProperty("TextBody", out var postmark) ? postmark : mail.GetProperty("Text")).GetString() ?? string.Empty).Groups[1].Value;
 
     [GeneratedRegex(@"/sign-in/link#(\S+)")]
     private static partial Regex LinkPattern();

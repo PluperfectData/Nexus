@@ -62,7 +62,7 @@ export function InstallPage() {
   }
 
   const mailActions: MailActions = {
-    save: async (serverToken, from, fromName) => setView(await installMail(code, serverToken, from, fromName)),
+    save: async (mail) => setView(await installMail(code, mail)),
     off: async () => setView(await installMailOff(code)),
     test: (to) => installTestMail(code, to),
     asksForRecipient: true,

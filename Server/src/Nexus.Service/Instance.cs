@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.DataProtection;
 using MySqlConnector;
 using Pluperfect.Mail;
@@ -43,7 +44,16 @@ public enum MailTransport
 {
     None,
     Postmark,
-    Files,
+    Mailpit,
+}
+
+/// <summary>How the pages chose to send mail. An instance with no choice yet uses what it has.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<MailChoice>))]
+public enum MailChoice
+{
+    Postmark,
+    Mailpit,
+    Off,
 }
 
 /// <summary>
@@ -79,6 +89,10 @@ public sealed class InstanceFile
     public string? ServerToken => Reveal(_stored.Mail?.ServerToken);
 
     public bool HasServerToken => _stored.Mail?.ServerToken is not null;
+
+    public string? MailpitUrl => _stored.Mail?.MailpitUrl;
+
+    public MailChoice? MailChoice => _stored.Mail?.Choice;
 
     public int? LogDays => _stored.LogDays;
 
@@ -121,14 +135,31 @@ public sealed class InstanceFile
 
     public void SaveCallbackOrigin(string? origin) => Change(stored => stored with { CallbackOrigin = origin });
 
-    /// <summary>Keeps the sender, and the token when one is given; a null token keeps the one stored.</summary>
-    public void SaveMail(string? serverToken, string? from, string fromName) =>
-        Change(stored => stored with
+    /// <summary>Sends mail through Postmark, keeping the sender, and the token when one is given; a null token keeps the one stored.</summary>
+    public void SavePostmark(string? serverToken, string? from, string fromName) =>
+        ChangeMail(mail => mail with
         {
-            Mail = new StoredMail(serverToken is null ? stored.Mail?.ServerToken : _protector.Protect(serverToken), from, fromName),
+            ServerToken = serverToken is null ? mail.ServerToken : _protector.Protect(serverToken),
+            From = from,
+            FromName = fromName,
+            Choice = Service.MailChoice.Postmark,
         });
 
-    public void ClearMail() => Change(stored => stored with { Mail = null });
+    /// <summary>Sends mail to Mailpit. A null address keeps the one stored, and a null sender keeps the stored sender.</summary>
+    public void SaveMailpit(string? mailpitUrl, string? from, string fromName) =>
+        ChangeMail(mail => mail with
+        {
+            MailpitUrl = mailpitUrl ?? mail.MailpitUrl,
+            From = from ?? mail.From,
+            FromName = fromName,
+            Choice = Service.MailChoice.Mailpit,
+        });
+
+    /// <summary>Sends no mail, keeping what each transport had, so choosing one again asks for nothing.</summary>
+    public void TurnMailOff() => ChangeMail(mail => mail with { Choice = Service.MailChoice.Off });
+
+    private void ChangeMail(Func<StoredMail, StoredMail> change) =>
+        Change(stored => stored with { Mail = change(stored.Mail ?? new StoredMail(null, null, Instance.DefaultSenderName)) });
 
     public void SaveLogDays(int days) => Change(stored => stored with { LogDays = days });
 
@@ -220,7 +251,7 @@ public sealed class InstanceFile
 
     internal sealed record StoredDatabase(string Host, int Port, string Name, string User, string Password);
 
-    internal sealed record StoredMail(string? ServerToken, string? From, string FromName);
+    internal sealed record StoredMail(string? ServerToken, string? From, string FromName, string? MailpitUrl = null, MailChoice? Choice = null);
 }
 
 /// <summary>
@@ -231,8 +262,7 @@ public sealed class Instance(
     InstanceFile file,
     ServiceSettings settings,
     PluperfectMailOptions mail,
-    IConfiguration configuration,
-    IHostEnvironment environment)
+    IConfiguration configuration)
 {
     public const string CallbackPath = "/oauth/callback";
 
@@ -244,8 +274,8 @@ public sealed class Instance(
 
     public const int MaxLogDays = 365;
 
-    // A sender for mail written to files, which reaches no one.
-    private const string FileSender = "nexus@localhost";
+    // A sender for mail to Mailpit, which reaches no one.
+    private const string MailpitSender = "nexus@localhost";
 
     public InstanceFile File => file;
 
@@ -272,8 +302,8 @@ public sealed class Instance(
     /// <summary>The address mail comes from, as configured or stored.</summary>
     public string? Sender => Given(settings.MailFrom) ?? file.MailFrom;
 
-    /// <summary>The address a message is sent from: the sender, or a placeholder for mail written to files.</summary>
-    public string? MailFrom => Sender ?? (Transport == MailTransport.Files ? FileSender : null);
+    /// <summary>The address a message is sent from: the sender, or a placeholder for mail to Mailpit.</summary>
+    public string? MailFrom => Sender ?? (Transport == MailTransport.Mailpit ? MailpitSender : null);
 
     public bool MailFromConfigured => Given(settings.MailFrom) is not null;
 
@@ -281,27 +311,35 @@ public sealed class Instance(
 
     public bool MailFromNameConfigured => Given(settings.MailFromName) is not null;
 
-#if DEBUG
-    private static bool DebugBuild => true;
-#else
-    private static bool DebugBuild => false;
-#endif
+    /// <summary>Where mail to Mailpit goes, as configured or stored.</summary>
+    public string? MailpitUrl => Given(mail.MailpitUrl)?.TrimEnd('/') ?? file.MailpitUrl;
+
+    public bool MailpitConfigured => Given(mail.MailpitUrl) is not null;
+
+    /// <summary>Where a person reads mail sent to Mailpit: Mailpit's own address unless configuration names another.</summary>
+    public string? MailpitInbox => Given(settings.MailpitInbox)?.TrimEnd('/') ?? MailpitUrl;
+
+    public MailChoice? MailChoice => file.MailChoice;
+
+    private bool PostmarkReady => ServerToken is not null && Sender is not null;
 
     /// <summary>
-    /// The folder mail is written to when no Postmark token and sender are set: the one configuration names, honored only
-    /// in a Debug build running as Development.
+    /// A Postmark token and sender in configuration fix the transport. Otherwise the pages' choice decides, and with no
+    /// choice yet, stored Postmark settings and then a configured Mailpit.
     /// </summary>
-    public string? MailFolder => DebugBuild && environment.IsDevelopment() ? Given(mail.PickupDirectory) : null;
-
-    /// <summary>Whether configuration names a mail folder that this build or environment does not write to.</summary>
-    public bool MailFolderIgnored => MailFolder is null && Given(mail.PickupDirectory) is not null;
-
     public MailTransport Transport =>
-        ServerToken is not null && Sender is not null
+        ServerTokenConfigured && MailFromConfigured
             ? MailTransport.Postmark
-            : MailFolder is not null
-                ? MailTransport.Files
-                : MailTransport.None;
+            : file.MailChoice switch
+            {
+                Service.MailChoice.Postmark => PostmarkReady ? MailTransport.Postmark : MailTransport.None,
+                Service.MailChoice.Mailpit => MailpitUrl is not null ? MailTransport.Mailpit : MailTransport.None,
+                Service.MailChoice.Off => MailTransport.None,
+                _ => PostmarkReady ? MailTransport.Postmark : MailpitConfigured ? MailTransport.Mailpit : MailTransport.None,
+            };
+
+    /// <summary>Whether the transport is one configuration fixes, which the pages cannot change.</summary>
+    public bool TransportConfigured => ServerTokenConfigured && MailFromConfigured;
 
     public bool MailReady => Transport != MailTransport.None;
 

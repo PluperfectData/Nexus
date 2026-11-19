@@ -13,11 +13,10 @@ holds the Log, which moves behind the hamburger below 30rem.
 The first admin comes from [the installer](running.md#the-installer).
 
 - A user signs in with a password, or with a link mailed to them that works once, for 15 minutes. An invite
-  link works once, for 7 days. Mail goes through `Pluperfect.Mail`'s Postmark transport, with the token set on the
-  Settings page. A Debug build running as Development writes `.eml` files to `data/mail` instead, until a Postmark
-  token and sender are saved to test real mail; turning Postmark off returns it to the files. A released service never
-  writes mail to files. An instance without mail offers no mailed links, and an invite answers its link for the admin
-  to pass on.
+  link works once, for 7 days. Mail goes through Postmark, with the token set on the Settings page, or to Mailpit,
+  which keeps each message for reading on its own page and delivers nothing. The Settings page chooses between them,
+  or turns mail off. Development, Docker, and the installed copy name a Mailpit, used until the page chooses. An
+  instance without mail offers no mailed links, and an invite answers its link for the admin to pass on.
 - The session is `Pluperfect.Jwt`'s: an access token in an `HttpOnly` cookie, a refresh token that rotates,
   and the origin and antiforgery checks on every unsafe request. Every route needs a session but `/health`
   and the sign-in routes under `/auth`.

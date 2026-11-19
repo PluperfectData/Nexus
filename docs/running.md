@@ -5,7 +5,12 @@
 ## Starting the service and the client
 
 The service runs on `http://localhost:6163`, and on `https://127.0.0.1:6164` for sign-in callbacks. Its client runs
-on `http://localhost:6165`. Start both, then open `http://localhost:6165/install`.
+on `http://localhost:6165`. Start Mailpit, which keeps the mail the service sends and shows it at
+`http://localhost:8025`. Then start both, and open `http://localhost:6165/install`.
+
+```bash
+mailpit
+```
 
 ```bash
 dotnet run --project Server/src/Nexus.Service
@@ -33,8 +38,9 @@ An instance starts with nothing set. Until it has a database, a client address, 
    that already has an admin skips step 4, which is how an existing instance is adopted.
 2. **The client's address:** where people open Nexus. CORS and the origin check allow it alone, and mailed links
    and connect pages point there.
-3. **Mail:** Postmark's server token and sender, with a test mail to an address you name. Mail may stay off.
-   A Debug build running as Development writes mail to `data/mail`, and the step says so.
+3. **Mail:** through Postmark, with its server token and sender, or to Mailpit, which delivers nothing and keeps each
+   message for reading on its own page. A test mail goes to an address you name, and mail may stay off. Development
+   names a Mailpit at `http://localhost:8025`, so the step starts there.
 4. **The first admin:** an email, signed in at once. Once mail works the password is optional, and an admin without
    one signs in with mailed links. With mail off, a password is required.
 5. **The callback address:** the https address providers send people back to after signing in, at `/oauth/callback`.

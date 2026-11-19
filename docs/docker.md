@@ -26,13 +26,15 @@ The launcher:
 6. Prints the installer's address with its install code while Nexus isn't set up, and opens Nexus.
 
 The installer page asks for that install code, since requests through Docker don't reach Nexus from this computer as
-Nexus sees it. Then it asks for Mail and the first admin; Nexus already knows its database and addresses.
+Nexus sees it. Then it asks for Mail and the first admin; Nexus already knows its database and addresses. Mail starts at Mailpit,
+so the first admin may skip the password.
 
 | Address | What |
 |---|---|
 | `https://localhost:6165` | Nexus |
 | `https://localhost:6163` | Its service |
 | `https://127.0.0.1:6164` | Where providers such as Schwab send people back after they sign in |
+| `http://localhost:6168` | Mailpit, where Nexus's mail waits to be read |
 
 A development copy uses the same ports, so stop one before starting Docker; the launcher says so when a port is
 taken. Docker keeps the containers running, and starts them again with Docker. Stop them from Docker Desktop, or with
@@ -59,20 +61,21 @@ which the launcher asks about on its next run.
 
 ## What runs
 
-`compose.yaml` holds three services, published on this computer only:
+`compose.yaml` holds four services, published on this computer only:
 
 | Service | Image | What |
 |---|---|---|
 | `nexus-web` | `ghcr.io/pluperfectdata/nexus-web` | Caddy, serving the pages, the service, and the callback address over HTTPS |
 | `nexus-api` | `ghcr.io/pluperfectdata/nexus-api` | The service, which browsers reach only through `nexus-web` |
 | `nexus-db` | `mysql:8.4` | The `nexus` database, not published outside Docker |
+| `nexus-mail` | `axllent/mailpit:v1.33` | Mailpit, which keeps the mail the service sends until Postmark is set up, at `http://localhost:6168` |
 
 Both of Nexus's images come from the one `Dockerfile`, as its `api` and `web` targets. Pluperfect.Jwt and
 Pluperfect.Mail come into the build as its `jwt` and `mail` build contexts.
 
-The data is in three Docker volumes: `nexus-database` holds the database, `nexus-data` what the service keeps (its
-settings, keys, files, and logs), and `nexus-caddy` Caddy's authority and certificates. ⚠ `docker compose down
---volumes` deletes all three, and everything Nexus holds with them.
+The data is in four Docker volumes: `nexus-database` holds the database, `nexus-data` what the service keeps (its
+settings, keys, files, and logs), `nexus-caddy` Caddy's authority and certificates, and `nexus-mail` the mail Mailpit
+keeps. ⚠ `docker compose down --volumes` deletes all four, and everything Nexus holds with them.
 
 Since every browser request reaches the service through Caddy, `compose.yaml` sets `Nexus__Proxied`, and the service reads
 who asked and over what from Caddy's forwarding headers. See [configuration](configuration.md).

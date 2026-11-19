@@ -22,6 +22,9 @@ public sealed class ServiceSettings
 
     public string? MailFromName { get; set; }
 
+    /// <summary>Where a person reads mail sent to Mailpit, when the service reaches Mailpit at another address.</summary>
+    public string? MailpitInbox { get; set; }
+
     /// <summary>How many days the operator log keeps an entry, from 1 to 365.</summary>
     public int? LogDays { get; set; }
 

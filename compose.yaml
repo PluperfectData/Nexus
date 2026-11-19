@@ -34,14 +34,29 @@ services:
     depends_on:
       nexus-db:
         condition: service_healthy
+      nexus-mail:
+        condition: service_started
     environment:
       ConnectionStrings__Nexus: Server=nexus-db;Port=3306;Database=nexus;User ID=nexus;Password=${NEXUS_DB_PASSWORD}
       Nexus__ClientOrigin: https://localhost:6165
       Nexus__CallbackOrigin: https://127.0.0.1:6164
       # Browsers reach the service only through nexus-web, so its forwarding headers say who asked and over what.
       Nexus__Proxied: "true"
+      # Mail goes to nexus-mail until the Settings page sends it through Postmark, and is read on its published port.
+      Mail__MailpitUrl: http://nexus-mail:8025
+      Nexus__MailpitInbox: http://localhost:6168
     volumes:
       - nexus-data:/data
+
+  nexus-mail:
+    image: axllent/mailpit:v1.33
+    restart: unless-stopped
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    ports:
+      - "127.0.0.1:6168:8025"
+    volumes:
+      - nexus-mail:/data
 
   nexus-web:
     image: ghcr.io/pluperfectdata/nexus-web:${NEXUS_VERSION:-local}
@@ -68,3 +83,5 @@ volumes:
     name: nexus-data
   nexus-caddy:
     name: nexus-caddy
+  nexus-mail:
+    name: nexus-mail

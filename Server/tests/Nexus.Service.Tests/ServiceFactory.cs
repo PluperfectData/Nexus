@@ -17,8 +17,8 @@ namespace Nexus.Service.Tests;
 
 /// <summary>
 /// Hosts the real service over a SQLite file in a temporary data directory, with a fake source and push API. It runs
-/// as Development, so cookies go over plain http, and mail lands as files in <see cref="MailDirectory"/> unless the
-/// factory sends it to <see cref="Postmark"/>. An installed factory starts as the installer leaves an instance: a
+/// as Development, so cookies go over plain http, and mail goes to <see cref="Mailpit"/>, configured as Development
+/// configures a Mailpit, unless the factory sends it to <see cref="Postmark"/>. An installed factory starts as the installer leaves an instance: a
 /// stored database, client address, and callback address, and an owner who is an admin.
 /// </summary>
 public sealed class ServiceFactory : WebApplicationFactory<Program>
@@ -49,14 +49,15 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         $"{SchwabApp.Section}:{nameof(SchwabApp.AppSecret)}",
     ];
 
-    private readonly bool _mailToFiles;
+    private readonly bool _withMailpit;
 
     private readonly bool _proxied;
 
+    /// <param name="withMailpit">Whether configuration names <see cref="Mailpit"/>, as Development's does.</param>
     /// <param name="proxied">Whether the service believes a proxy's forwarding headers, as it does behind Caddy.</param>
-    public ServiceFactory(bool installed = true, bool mailToFiles = true, bool proxied = false)
+    public ServiceFactory(bool installed = true, bool withMailpit = true, bool proxied = false)
     {
-        _mailToFiles = mailToFiles;
+        _withMailpit = withMailpit;
         _proxied = proxied;
         Directory.CreateDirectory(DataDirectory);
         using var db = NewContext();
@@ -75,8 +76,6 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     public string DataDirectory { get; } = Path.Combine(Path.GetTempPath(), "nexus-service-tests", Guid.NewGuid().ToString("N"));
 
-    public string MailDirectory => Path.Combine(DataDirectory, "mail");
-
     /// <summary>How many files connections hold in the service's files directory.</summary>
     public int StoredFileCount => Directory.Exists(Path.Combine(DataDirectory, "files")) ? Directory.GetFiles(Path.Combine(DataDirectory, "files")).Length : 0;
 
@@ -90,6 +89,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     internal FakeSchwab Schwab { get; } = new();
 
     internal FakePostmark Postmark { get; } = new();
+
+    internal FakeMailpit Mailpit { get; } = new();
 
     /// <summary>Connectors the service reads through besides the usual ones, added before the service starts.</summary>
     internal List<ISourceConnector> MoreConnectors { get; } = [];
@@ -113,8 +114,8 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
     /// <summary>An installed factory whose mail goes through <see cref="Postmark"/> from the start, as a Release build's does.</summary>
     public static ServiceFactory WithPostmark()
     {
-        var factory = new ServiceFactory(mailToFiles: false);
-        factory.NewInstanceFile().SaveMail(FakePostmark.Token, MailSender, Instance.DefaultSenderName);
+        var factory = new ServiceFactory(withMailpit: false);
+        factory.NewInstanceFile().SavePostmark(FakePostmark.Token, MailSender, Instance.DefaultSenderName);
         return factory;
     }
 
@@ -171,7 +172,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
         }
 
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
-        builder.UseSetting("Mail:PickupDirectory", _mailToFiles ? MailDirectory : string.Empty);
+        builder.UseSetting("Mail:MailpitUrl", _withMailpit ? FakeMailpit.Address : string.Empty);
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.Proxied)}", _proxied ? "true" : "false");
 
         builder.ConfigureTestServices(services =>
@@ -186,6 +187,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
             services.Remove(services.Single(d => d.ImplementationType == typeof(SignInWatcher)));
             services.AddHttpClient(OAuthApps.SchwabHttpClient).ConfigurePrimaryHttpMessageHandler(() => Schwab);
             services.AddHttpClient(InstanceMailer.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Postmark);
+            services.AddHttpClient(InstanceMailer.MailpitClientName).ConfigurePrimaryHttpMessageHandler(() => Mailpit);
             services.RemoveAll<HttpRetryOptions>();
             services.AddSingleton(new HttpRetryOptions { MaxAttempts = 1 });
             services.RemoveAll<RetryPolicy>();

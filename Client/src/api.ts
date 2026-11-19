@@ -385,19 +385,36 @@ export interface InstallView {
   mailSettings: MailSettings | null
 }
 
-export type MailTransport = 'None' | 'Postmark' | 'Files'
+export type MailTransport = 'None' | 'Postmark' | 'Mailpit'
+
+/** How the pages chose to send mail; null until one is chosen. */
+export type MailChoice = 'Postmark' | 'Mailpit' | 'Off'
 
 /** How the instance sends mail. A field set by the service's configuration cannot be changed here. */
 export interface MailSettings {
   transport: MailTransport
+  choice: MailChoice | null
+  /** Whether configuration fixes the transport, as a Postmark token and sender there do. */
+  transportConfigured: boolean
   tokenSet: boolean
   tokenConfigured: boolean
   from: string | null
   fromConfigured: boolean
   fromName: string
   fromNameConfigured: boolean
-  /** The folder mail is written to instead of sent, when configuration names one. */
-  folder: string | null
+  mailpitUrl: string | null
+  mailpitConfigured: boolean
+  /** Where a person reads mail sent to Mailpit. */
+  mailpitInbox: string | null
+}
+
+/** What the mail form saves. A blank token or Mailpit address keeps the one stored. */
+export interface MailChange {
+  transport: 'Postmark' | 'Mailpit'
+  serverToken: string
+  from: string
+  fromName: string
+  mailpitUrl: string
 }
 
 export interface Settings {
@@ -419,7 +436,8 @@ export interface Settings {
 export interface TestMail {
   sentTo: string
   transport: MailTransport
-  folder: string | null
+  /** Mailpit's page, where a test mail sent to Mailpit can be read. */
+  inbox: string | null
 }
 
 // The installer checks who calls it itself, so it takes no CSRF token. A page on another machine sends the install code.
@@ -439,8 +457,7 @@ export const installAddress = (code: string | null, clientOrigin: string) =>
 /** The first admin; the password may be blank once mail works, to sign in by mailed links. */
 export const installAdmin = (code: string | null, email: string, password: string) =>
   installRequest<Me>(code, '/install/admin', 'POST', { email, password })
-export const installMail = (code: string | null, serverToken: string, from: string, fromName: string) =>
-  installRequest<InstallView>(code, '/install/mail', 'PUT', { serverToken, from, fromName })
+export const installMail = (code: string | null, mail: MailChange) => installRequest<InstallView>(code, '/install/mail', 'PUT', mail)
 export const installMailOff = (code: string | null) => installRequest<InstallView>(code, '/install/mail', 'DELETE')
 export const installTestMail = (code: string | null, to: string) => installRequest<TestMail>(code, '/install/mail/test', 'POST', { to })
 export const askForInstallCode = () => installRequest<null>(null, '/install/code', 'POST')
@@ -448,14 +465,13 @@ export const askForInstallCode = () => installRequest<null>(null, '/install/code
 export const getSettings = () => request<Settings>('/settings')
 export const saveAddresses = (clientOrigin: string, callbackOrigin: string) =>
   request<Settings>('/settings/addresses', 'PUT', { clientOrigin, callbackOrigin })
-export const saveMail = (serverToken: string, from: string, fromName: string) =>
-  request<Settings>('/settings/mail', 'PUT', { serverToken, from, fromName })
+export const saveMail = (mail: MailChange) => request<Settings>('/settings/mail', 'PUT', mail)
 export const turnOffMail = () => request<Settings>('/settings/mail', 'DELETE')
 export const testMail = () => request<TestMail>('/settings/mail/test', 'POST')
 
 /** What the mail form does with what it is given: the Settings page's calls, or the installer's. */
 export interface MailActions {
-  save: (serverToken: string, from: string, fromName: string) => Promise<void>
+  save: (mail: MailChange) => Promise<void>
   off: () => Promise<void>
   /** The installer asks where a test mail goes, since no admin exists yet to mail. */
   test: (to: string) => Promise<TestMail>

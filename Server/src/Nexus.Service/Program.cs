@@ -132,7 +132,13 @@ builder.Services.AddHttpClient(InstanceMailer.HttpClientName, (services, client)
     client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<PluperfectMailOptions>().TimeoutSeconds);
     client.DefaultRequestHeaders.Add("Accept", "application/json");
 });
+builder.Services.AddHttpClient(InstanceMailer.MailpitClientName, (services, client) =>
+{
+    client.Timeout = TimeSpan.FromSeconds(services.GetRequiredService<PluperfectMailOptions>().TimeoutSeconds);
+    client.DefaultRequestHeaders.Add("Accept", "application/json");
+});
 builder.Services.AddSingleton<IMailer, InstanceMailer>();
+builder.Services.AddSingleton<MailpitProbe>();
 
 builder.Services.AddCors();
 builder.Services.Replace(ServiceDescriptor.Singleton<ICorsPolicyProvider, InstanceCorsPolicy>());

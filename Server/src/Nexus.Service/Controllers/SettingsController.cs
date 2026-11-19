@@ -10,23 +10,27 @@ namespace Nexus.Service.Controllers;
 
 public sealed record AddressesRequest(string? ClientOrigin, string? CallbackOrigin);
 
-public sealed record MailSettingsRequest(string? ServerToken, string? From, string? FromName);
+public sealed record MailSettingsRequest(MailChoice? Transport, string? ServerToken, string? From, string? FromName, string? MailpitUrl);
 
 public sealed record LogSettingsRequest(int? Days);
 
 /// <summary>
-/// How the instance sends mail. The server token is never answered, only whether one is set. A field set by the
-/// service's configuration is shown, and the page cannot change it.
+/// How the instance sends mail, and what the pages chose. The server token is never answered, only whether one is set.
+/// A field set by the service's configuration is shown, and the page cannot change it.
 /// </summary>
 public sealed record MailView(
     MailTransport Transport,
+    MailChoice? Choice,
+    bool TransportConfigured,
     bool TokenSet,
     bool TokenConfigured,
     string? From,
     bool FromConfigured,
     string FromName,
     bool FromNameConfigured,
-    string? Folder);
+    string? MailpitUrl,
+    bool MailpitConfigured,
+    string? MailpitInbox);
 
 public sealed record SettingsView(
     string? ClientOrigin,
@@ -41,7 +45,7 @@ public sealed record SettingsView(
     int LogDays,
     bool LogDaysConfigured);
 
-public sealed record TestMailView(string SentTo, MailTransport Transport, string? Folder);
+public sealed record TestMailView(string SentTo, MailTransport Transport, string? Inbox);
 
 /// <summary>The instance's own settings, for admins: its addresses, its mail, and its database.</summary>
 [ApiController]
@@ -97,7 +101,7 @@ public sealed class SettingsController(Instance instance, Installation installat
         return View();
     }
 
-    /// <summary>Sets Postmark's server token and the sender. A blank token keeps the one stored.</summary>
+    /// <summary>Sends mail through Postmark or to Mailpit. A blank token or address keeps the one stored.</summary>
     [HttpPut("mail")]
     public async Task<ActionResult<SettingsView>> Mail(MailSettingsRequest request, CancellationToken ct)
     {
@@ -106,21 +110,21 @@ public sealed class SettingsController(Instance instance, Installation installat
             return Problem(failed.Problem, statusCode: failed.Status);
         }
 
-        var tokenSaid = string.IsNullOrWhiteSpace(request.ServerToken) ? string.Empty : ", with a new server token";
-        await NoteAsync(log => log.Info($"Mail was set to go through Postmark, from {instance.MailFromName} at {instance.Sender}{tokenSaid}.", LogPlace.Instance), ct);
+        await NoteAsync(log => log.Info($"Mail was set to {MailForm.Describe(request, instance)}.", LogPlace.Instance), ct);
         return View();
     }
 
-    /// <summary>Forgets the stored token and sender, which turns mail off unless configuration sets it.</summary>
+    /// <summary>Sends no mail, keeping each transport's settings for choosing it again.</summary>
     [HttpDelete("mail")]
-    public async Task<SettingsView> TurnOffMail(CancellationToken ct)
+    public async Task<ActionResult<SettingsView>> TurnOffMail(CancellationToken ct)
     {
-        instance.File.ClearMail();
-        await NoteAsync(
-            log => log.Info(
-                instance.MailReady ? "The stored mail settings were removed. Mail still goes out as the service's configuration sets it." : "Mail was turned off.",
-                LogPlace.Instance),
-            ct);
+        if (instance.TransportConfigured)
+        {
+            return Problem(MailForm.Configured, statusCode: StatusCodes.Status409Conflict);
+        }
+
+        instance.File.TurnMailOff();
+        await NoteAsync(log => log.Info("Mail was turned off.", LogPlace.Instance), ct);
         return View();
     }
 
@@ -239,11 +243,41 @@ public static class MailForm
 {
     public const int MaxNameLength = 100;
 
+    public const string Configured = "Mail goes through Postmark, as the service's configuration sets it, in Mail:ServerToken and Nexus:MailFrom.";
+
     /// <summary>
-    /// Keeps Postmark's server token and the sender the form names, or answers why it cannot, with the status to answer
-    /// it with. A blank token keeps the one stored, and a value set by configuration is left as it is.
+    /// Keeps the transport the form chose, with its settings, or answers why it cannot, with the status to answer it
+    /// with. A blank token or Mailpit address keeps the one stored, and a value set by configuration is left as it is.
     /// </summary>
     public static (string Problem, int Status)? Save(MailSettingsRequest request, Instance instance)
+    {
+        if (instance.TransportConfigured)
+        {
+            return (Configured, StatusCodes.Status409Conflict);
+        }
+
+        var name = string.IsNullOrWhiteSpace(request.FromName) ? Instance.DefaultSenderName : request.FromName.Trim();
+        if (name.Length > MaxNameLength || name.Any(char.IsControl))
+        {
+            return ($"A sender's name is one line of up to {MaxNameLength} characters.", StatusCodes.Status400BadRequest);
+        }
+
+        return request.Transport switch
+        {
+            MailChoice.Postmark => SavePostmark(request, instance, name),
+            MailChoice.Mailpit => SaveMailpit(request, instance, name),
+            _ => ("Choose how mail goes: through Postmark, or to Mailpit.", StatusCodes.Status400BadRequest),
+        };
+    }
+
+    /// <summary>What the saved settings do, for the Log page.</summary>
+    public static string Describe(MailSettingsRequest request, Instance instance) =>
+        instance.Transport == MailTransport.Mailpit
+            ? $"go to Mailpit at {instance.MailpitUrl}"
+            : $"go through Postmark, from {instance.MailFromName} at {instance.Sender}"
+                + (string.IsNullOrWhiteSpace(request.ServerToken) ? string.Empty : ", with a new server token");
+
+    private static (string Problem, int Status)? SavePostmark(MailSettingsRequest request, Instance instance, string name)
     {
         var token = string.IsNullOrWhiteSpace(request.ServerToken) ? null : request.ServerToken.Trim();
         if (instance.ServerTokenConfigured && token is not null)
@@ -262,13 +296,33 @@ public static class MailForm
             return ("Enter the address mail comes from, on a domain Postmark may send as.", StatusCodes.Status400BadRequest);
         }
 
-        var name = string.IsNullOrWhiteSpace(request.FromName) ? Instance.DefaultSenderName : request.FromName.Trim();
-        if (name.Length > MaxNameLength || name.Any(char.IsControl))
+        instance.File.SavePostmark(token, from, name);
+        return null;
+    }
+
+    private static (string Problem, int Status)? SaveMailpit(MailSettingsRequest request, Instance instance, string name)
+    {
+        var given = string.IsNullOrWhiteSpace(request.MailpitUrl) ? null : request.MailpitUrl.Trim().TrimEnd('/');
+        if (instance.MailpitConfigured && given is not null && given != instance.MailpitUrl)
         {
-            return ($"A sender's name is one line of up to {MaxNameLength} characters.", StatusCodes.Status400BadRequest);
+            return ("Mailpit's address is set by the service's configuration, in Mail:MailpitUrl.", StatusCodes.Status409Conflict);
         }
 
-        instance.File.SaveMail(token, from, name);
+        if (!instance.MailpitConfigured)
+        {
+            if ((given is null && instance.File.MailpitUrl is null) || (given is not null && !PluperfectMailOptionsValidator.IsWebAddress(given)))
+            {
+                return ("Enter Mailpit's address, such as http://localhost:8025.", StatusCodes.Status400BadRequest);
+            }
+        }
+
+        string? from = null;
+        if (!instance.MailFromConfigured && !string.IsNullOrWhiteSpace(request.From) && (from = Emails.Normalize(request.From)) is null)
+        {
+            return ("Enter the address mail comes from, or leave it blank.", StatusCodes.Status400BadRequest);
+        }
+
+        instance.File.SaveMailpit(instance.MailpitConfigured ? null : given, from, name);
         return null;
     }
 
@@ -296,16 +350,20 @@ public static class MailForm
     }
 
     public static TestMailView Sent(string to, Instance instance) =>
-        new(to, instance.Transport, instance.Transport == MailTransport.Files ? Path.GetFullPath(instance.MailFolder!) : null);
+        new(to, instance.Transport, instance.Transport == MailTransport.Mailpit ? instance.MailpitInbox : null);
 
     public static MailView View(Instance instance) =>
         new(
             instance.Transport,
+            instance.MailChoice,
+            instance.TransportConfigured,
             instance.ServerToken is not null,
             instance.ServerTokenConfigured,
             instance.Sender,
             instance.MailFromConfigured,
             instance.MailFromName,
             instance.MailFromNameConfigured,
-            instance.MailFolder is { } folder ? Path.GetFullPath(folder) : null);
+            instance.MailpitUrl,
+            instance.MailpitConfigured,
+            instance.MailpitInbox);
 }

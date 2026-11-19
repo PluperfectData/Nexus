@@ -16,6 +16,7 @@ public static class InstanceReset
         ("Nexus:ClientOrigin", "the installer skips the client's address"),
         ("Nexus:CallbackOrigin", "the callback address is fixed"),
         ("Mail:ServerToken", "Postmark's token is fixed"),
+        ("Mail:MailpitUrl", "Mailpit's address is fixed"),
         ("Nexus:MailFrom", "the sender is fixed"),
         ("Nexus:MailFromName", "the sender's name is fixed"),
         ("Jwt:SigningKey", "the signing key is fixed"),

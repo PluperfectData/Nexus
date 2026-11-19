@@ -13,7 +13,8 @@ debugging. A configured value wins over the stored one, and the pages show it wi
 | `Mail:ServerToken` | `Mail__ServerToken` | Postmark's server token |
 | `Nexus:MailFrom`, `Nexus:MailFromName` | `Nexus__MailFrom`, `Nexus__MailFromName` | The sender |
 | `Jwt:SigningKey` | `Jwt__SigningKey` | The session signing key the service makes, at least 32 bytes |
-| `Mail:PickupDirectory` | `Mail__PickupDirectory` | Sending mail, in a Debug build running as Development: it is written to files there until a Postmark token and sender are saved. Anywhere else it is ignored, and the log says so. |
+| `Mail:MailpitUrl` | `Mail__MailpitUrl` | Mailpit's address. Mail goes there until the Settings page chooses Postmark or turns mail off. Development names `http://localhost:8025`. |
+| `Nexus:MailpitInbox` | `Nexus__MailpitInbox` | Where a person reads Mailpit's mail, when it isn't `Mail:MailpitUrl`, as in Docker |
 | `Nexus:Schwab:AppKey`, `Nexus:Schwab:AppSecret` | `Nexus__Schwab__AppKey`, `Nexus__Schwab__AppSecret` | Each workspace's Schwab app |
 | `Nexus:LogDays` | `Nexus__LogDays` | How many days the Log page keeps an entry |
 

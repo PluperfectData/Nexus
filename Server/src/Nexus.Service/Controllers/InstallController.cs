@@ -152,6 +152,14 @@ public sealed class InstallController(
             return Problem(NoWayBack, statusCode: StatusCodes.Status400BadRequest);
         }
 
+        if (password is null && instance.Transport == MailTransport.Mailpit
+            && !await services.GetRequiredService<MailpitProbe>().AnswersAsync(instance.MailpitUrl!, ct))
+        {
+            return Problem(
+                $"Mailpit isn't answering at {instance.MailpitUrl}, so a sign-in link would go nowhere. Start Mailpit, or choose a password.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
         if (password is not null && Passwords.Problem(password) is { } problem)
         {
             return Problem(problem, statusCode: StatusCodes.Status400BadRequest);
@@ -195,7 +203,7 @@ public sealed class InstallController(
         return new MeView(true, user.Id, user.Email, true, user.PasswordHash is not null);
     }
 
-    /// <summary>Sets Postmark's server token and the sender before the first admin, as the Settings page does after.</summary>
+    /// <summary>Sends mail through Postmark or to Mailpit before the first admin, as the Settings page does after.</summary>
     [HttpPut("mail")]
     public async Task<ActionResult<InstallView>> Mail(MailSettingsRequest request, CancellationToken ct)
     {
@@ -211,13 +219,13 @@ public sealed class InstallController(
 
         if (installation.DatabaseReady)
         {
-            await NoteAsync($"The installer set mail to go through Postmark, from {instance.MailFromName} at {instance.Sender}.", ct);
+            await NoteAsync($"The installer set mail to {MailForm.Describe(request, instance)}.", ct);
         }
 
         return await ViewAsync(allowed: true, ct);
     }
 
-    /// <summary>Forgets the stored token and sender, which turns mail off unless configuration sets it.</summary>
+    /// <summary>Sends no mail, keeping each transport's settings for choosing it again.</summary>
     [HttpDelete("mail")]
     public async Task<ActionResult<InstallView>> TurnOffMail(CancellationToken ct)
     {
@@ -226,7 +234,17 @@ public sealed class InstallController(
             return refused;
         }
 
-        instance.File.ClearMail();
+        if (instance.TransportConfigured)
+        {
+            return Problem(MailForm.Configured, statusCode: StatusCodes.Status409Conflict);
+        }
+
+        instance.File.TurnMailOff();
+        if (installation.DatabaseReady)
+        {
+            await NoteAsync("The installer turned mail off.", ct);
+        }
+
         return await ViewAsync(allowed: true, ct);
     }
 

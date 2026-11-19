@@ -29,13 +29,17 @@ const settings: Settings = {
   callbackSuggestion: 'https://127.0.0.1:6164',
   mail: {
     transport: 'Postmark',
+    choice: 'Postmark',
+    transportConfigured: false,
     tokenSet: true,
     tokenConfigured: false,
     from: 'nexus@acme.test',
     fromConfigured: false,
     fromName: 'Nexus',
     fromNameConfigured: false,
-    folder: null,
+    mailpitUrl: null,
+    mailpitConfigured: false,
+    mailpitInbox: null,
   },
   database: { host: 'localhost', port: 3306, name: 'nexus', user: 'nexus' },
   databaseConfigured: false,
@@ -120,7 +124,7 @@ it('asks before moving the client away from this page, and keeps the address whe
 })
 
 it('keeps the token write-only and sends a test mail', async () => {
-  jest.mocked(testMail).mockResolvedValue({ sentTo: 'admin@acme.test', transport: 'Postmark', folder: null })
+  jest.mocked(testMail).mockResolvedValue({ sentTo: 'admin@acme.test', transport: 'Postmark', inbox: null })
   renderAs(admin)
 
   const token = await screen.findByLabelText('Postmark server token')
@@ -129,6 +133,16 @@ it('keeps the token write-only and sends a test mail', async () => {
   expect(token).toHaveValue('')
   expect(token).toHaveAttribute('placeholder', 'Stored')
   expect(await screen.findByText('Sent a test mail to admin@acme.test.')).toBeInTheDocument()
+})
+
+it('fixes the transport when the configuration sets Postmark', async () => {
+  jest.mocked(getSettings).mockResolvedValue({ ...settings, mail: { ...settings.mail, transportConfigured: true, tokenConfigured: true, fromConfigured: true } })
+  renderAs(admin)
+
+  expect(await screen.findByText("Mail goes through Postmark, as the service's configuration sets it.")).toBeInTheDocument()
+  expect(screen.getByLabelText('Mailpit, which keeps every message for you to read')).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Save mail' })).toBeDisabled()
+  expect(screen.queryByRole('button', { name: 'Turn mail off' })).not.toBeInTheDocument()
 })
 
 it('shows a value the configuration sets without offering to change it', async () => {

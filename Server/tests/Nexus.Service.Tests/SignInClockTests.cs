@@ -259,7 +259,7 @@ public sealed class SignInClockTests
     [Test]
     public async Task An_instance_without_mail_ends_a_sign_in_and_sends_nothing()
     {
-        using var factory = new ServiceFactory(mailToFiles: false);
+        using var factory = new ServiceFactory(withMailpit: false);
         using var admin = await factory.SignedInAsync(AdminEmail, admin: true);
         var workspace = (await admin.SendAsync<JsonElement>(HttpMethod.Post, "/workspaces", new { name = "Acme" })).GetProperty("id").GetInt32();
         (await admin.SendAsync(HttpMethod.Put, $"/workspaces/{workspace}/reminder-email", new { choice = "Everyone" })).EnsureSuccessStatusCode();

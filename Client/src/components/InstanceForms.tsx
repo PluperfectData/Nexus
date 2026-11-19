@@ -179,11 +179,28 @@ export function AddressesForm({ settings, onSaved }: { settings: Settings; onSav
   )
 }
 
-/** Postmark's server token and the sender, with a test mail to the admin. */
+type MailPick = 'Postmark' | 'Mailpit' | 'Off'
+
+/** The transport to show first: the one in use, or what the pages last chose. */
+function firstPick(mail: MailSettings): MailPick {
+  if (mail.transport !== 'None') return mail.transport
+  if (mail.choice === 'Off') return 'Off'
+  return mail.choice ?? (mail.mailpitConfigured ? 'Mailpit' : 'Postmark')
+}
+
+const PICKS: { value: MailPick; label: string }[] = [
+  { value: 'Postmark', label: 'Postmark, which delivers to real inboxes' },
+  { value: 'Mailpit', label: 'Mailpit, which keeps every message for you to read' },
+  { value: 'Off', label: 'Nowhere: mail is off' },
+]
+
+/** How the instance sends mail, through Postmark or to Mailpit, or not at all, with a test mail. */
 export function MailForm({ mail, actions }: { mail: MailSettings; actions: MailActions }) {
+  const [pick, setPick] = useState<MailPick>(() => firstPick(mail))
   const [token, setToken] = useState('')
   const [from, setFrom] = useState(mail.from ?? '')
   const [fromName, setFromName] = useState(mail.fromName)
+  const [mailpitUrl, setMailpitUrl] = useState(mail.mailpitUrl ?? '')
   const [recipient, setRecipient] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -204,76 +221,110 @@ export function MailForm({ mail, actions }: { mail: MailSettings; actions: MailA
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (pick === 'Off') return
     void act(async () => {
-      await actions.save(token.trim(), from.trim(), fromName.trim())
+      await actions.save({ transport: pick, serverToken: token.trim(), from: from.trim(), fromName: fromName.trim(), mailpitUrl: mailpitUrl.trim() })
       setToken('')
-      setNotice('Saved. Send a test mail to check it.')
+      setNotice(pick === 'Mailpit' ? 'Mail now goes to Mailpit. Send a test mail to check it.' : 'Saved. Send a test mail to check it.')
     })
   }
 
   const test = () =>
     act(async () => {
       const sent = await actions.test(recipient.trim())
-      setNotice(sent.folder ? `Wrote a test mail for ${sent.sentTo} in ${sent.folder}.` : `Sent a test mail to ${sent.sentTo}.`)
+      setNotice(sent.inbox ? `Sent a test mail to ${sent.sentTo}. Read it in Mailpit at ${sent.inbox}.` : `Sent a test mail to ${sent.sentTo}.`)
     })
 
-  // In a debug build, turning Postmark off sends mail back to its files.
   const off = () =>
-    window.confirm(
-      mail.folder
-        ? `Stop sending through Postmark? Mail goes to files in ${mail.folder} again.`
-        : 'Turn mail off? Invites then give a link to pass on, and sign-in links are not offered.',
-    ) &&
+    window.confirm('Turn mail off? Invites then give a link to pass on, and sign-in links are not offered.') &&
     act(async () => {
       await actions.off()
-      setFrom('')
-      setNotice(mail.folder ? 'Mail goes to files again.' : 'Mail is off.')
+      setNotice('Mail is off.')
     })
 
-  const stored = mail.tokenSet && !mail.tokenConfigured
+  const locked = mail.transportConfigured
 
   return (
     <form className="form stacked" onSubmit={submit}>
-      {mail.transport === 'Files' && (
-        <p className="muted">
-          This debug build writes mail to files in {mail.folder}. To test real mail, save a Postmark token and sender below.
-        </p>
+      {mail.transport === 'Postmark' && (
+        <p className="muted">{locked ? "Mail goes through Postmark, as the service's configuration sets it." : 'Mail goes through Postmark.'}</p>
       )}
-      {mail.transport === 'Postmark' && mail.folder && (
-        <p className="muted">Mail goes through Postmark. Use mail files again to write it to {mail.folder} instead.</p>
+      {mail.transport === 'Mailpit' && (
+        <p className="muted">
+          Mail goes to Mailpit, which delivers nothing. It keeps every message for you to read at{' '}
+          {mail.mailpitInbox && (
+            <a href={mail.mailpitInbox} target="_blank" rel="noreferrer">
+              {mail.mailpitInbox}
+            </a>
+          )}
+          .
+        </p>
       )}
       {mail.transport === 'None' && (
-        <p className="muted">
-          Mail is off. Invites give a link to pass on, and the sign-in page offers only passwords.
-        </p>
+        <p className="muted">Mail is off. Invites give a link to pass on, and the sign-in page offers only passwords.</p>
       )}
-      <label>
-        Postmark server token
-        <input
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          disabled={mail.tokenConfigured}
-          placeholder={mail.tokenSet ? 'Stored' : ''}
-          autoComplete="off"
-        />
-      </label>
-      <p className="hint muted">
-        {mail.tokenConfigured
-          ? CONFIGURED
-          : mail.tokenSet
-            ? 'Leave blank to keep the stored token. Nexus never shows it again.'
-            : "Postmark shows it under the server's API Tokens."}
-      </p>
-      <label>
-        From address
-        <input type="email" value={from} onChange={(e) => setFrom(e.target.value)} disabled={mail.fromConfigured} />
-      </label>
-      <p className="hint muted">{mail.fromConfigured ? CONFIGURED : 'On a domain Postmark may send as.'}</p>
-      <label>
-        Sender's name
-        <input value={fromName} onChange={(e) => setFromName(e.target.value)} disabled={mail.fromNameConfigured} />
-      </label>
+      <fieldset className="choices" disabled={locked}>
+        <legend>Send mail through</legend>
+        {PICKS.map((p) => (
+          <label key={p.value} className="check">
+            <input type="radio" name="mail-transport" value={p.value} checked={pick === p.value} onChange={() => setPick(p.value)} />
+            {p.label}
+          </label>
+        ))}
+      </fieldset>
+      {pick === 'Postmark' && (
+        <>
+          <label>
+            Postmark server token
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              disabled={mail.tokenConfigured || locked}
+              placeholder={mail.tokenSet ? 'Stored' : ''}
+              autoComplete="off"
+            />
+          </label>
+          <p className="hint muted">
+            {mail.tokenConfigured
+              ? CONFIGURED
+              : mail.tokenSet
+                ? 'Leave blank to keep the stored token. Nexus never shows it again.'
+                : "Postmark shows it under the server's API Tokens."}
+          </p>
+        </>
+      )}
+      {pick === 'Mailpit' && (
+        <>
+          <label>
+            Mailpit's address
+            <input
+              type="url"
+              value={mailpitUrl}
+              onChange={(e) => setMailpitUrl(e.target.value)}
+              disabled={mail.mailpitConfigured}
+              placeholder="http://localhost:8025"
+              autoComplete="off"
+            />
+          </label>
+          <p className="hint muted">{mail.mailpitConfigured ? CONFIGURED : 'Where Mailpit runs. Start it with mailpit, and it listens at http://localhost:8025.'}</p>
+        </>
+      )}
+      {pick !== 'Off' && (
+        <>
+          <label>
+            From address{pick === 'Mailpit' && ' (optional)'}
+            <input type="email" value={from} onChange={(e) => setFrom(e.target.value)} disabled={mail.fromConfigured || locked} />
+          </label>
+          <p className="hint muted">
+            {mail.fromConfigured ? CONFIGURED : pick === 'Mailpit' ? 'Mailpit takes any address.' : 'On a domain Postmark may send as.'}
+          </p>
+          <label>
+            Sender's name
+            <input value={fromName} onChange={(e) => setFromName(e.target.value)} disabled={mail.fromNameConfigured || locked} />
+          </label>
+        </>
+      )}
       {actions.asksForRecipient && mail.transport !== 'None' && (
         <label>
           Send a test mail to
@@ -283,17 +334,19 @@ export function MailForm({ mail, actions }: { mail: MailSettings; actions: MailA
       {error && <p className="error">{error}</p>}
       {notice && <p className="success">{notice}</p>}
       <div className="form-actions">
-        <button type="submit" disabled={busy || (mail.tokenConfigured && mail.fromConfigured && mail.fromNameConfigured)}>
-          Save mail
-        </button>
+        {pick !== 'Off' && (
+          <button type="submit" disabled={busy || locked}>
+            Save mail
+          </button>
+        )}
+        {pick === 'Off' && mail.transport !== 'None' && !locked && (
+          <button type="button" onClick={off} disabled={busy}>
+            Turn mail off
+          </button>
+        )}
         {mail.transport !== 'None' && (
           <button type="button" className="secondary" onClick={test} disabled={busy || (actions.asksForRecipient && !recipient.trim())}>
             Send a test mail
-          </button>
-        )}
-        {stored && (
-          <button type="button" className="quiet" onClick={off} disabled={busy}>
-            {mail.folder ? 'Use mail files again' : 'Turn mail off'}
           </button>
         )}
       </div>
