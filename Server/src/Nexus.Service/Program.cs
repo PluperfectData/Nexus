@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nexus;
 using Nexus.Push;
@@ -33,6 +34,18 @@ const string PushClient = "push";
 // Development runs over plain http, so its cookies drop the __Host- prefix and the Secure flag. Sessions and the
 // antiforgery cookie take the same answer.
 var secureOrigin = !builder.Environment.IsDevelopment();
+
+// The proxy is the only peer, so its headers are believed from any address; the setting must stay off wherever the
+// service's own port can be reached.
+if (settings.Proxied)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownProxies.Clear();
+        options.KnownIPNetworks.Clear();
+    });
+}
 
 // Each host owns its logger and closes its file when it stops, leaving the static Log alone. Sinks registered as
 // ILogEventSink, such as a test's, join the console and the file.
@@ -176,6 +189,12 @@ if (args is ["add-admin", var email])
         ? "The instance has no client address yet, so there is no sign-in link. Set it at /install."
         : $"This link signs them in once, within an hour:{Environment.NewLine}{link}");
     return;
+}
+
+// Before anything that reads the client's address or the scheme: the request log, antiforgery, and the install code.
+if (settings.Proxied)
+{
+    app.UseForwardedHeaders();
 }
 
 app.UseSerilogRequestLogging(options =>

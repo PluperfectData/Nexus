@@ -32,15 +32,18 @@ if errorlevel 1 (
   goto :stopped
 )
 
+call :trust nexus-web Nexus
+if "%FILE%"=="compose.both.yaml" call :trust scry-web Scry
+
 call :install nexus-api Nexus
 if "%FILE%"=="compose.both.yaml" call :install scry-api Scry
 
 echo.
-echo Nexus is running at http://localhost:6165. Docker Desktop keeps it running, and can stop it.
-start "" http://localhost:6165
+echo Nexus is running at https://localhost:6165. Docker Desktop keeps it running, and can stop it.
+start "" https://localhost:6165
 if "%FILE%"=="compose.both.yaml" (
-  echo Scry is running at http://localhost:6160.
-  start "" http://localhost:6160
+  echo Scry is running at https://localhost:6160.
+  start "" https://localhost:6160
 )
 pause
 exit /b 0
@@ -65,6 +68,19 @@ rem A database password, made the first time and kept in .env beside that produc
 :password
 if exist "%~1\.env" exit /b 0
 powershell -NoProfile -Command "$b = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); $p = [Convert]::ToBase64String($b) -replace '[+/=]', ''; [IO.File]::WriteAllText((Join-Path (Resolve-Path '%~1') '.env'), ('%~2=' + $p + [char]10))"
+exit /b 0
+
+rem Asks Windows to trust the authority Caddy made for this product's addresses, the first time it meets it.
+:trust
+set CERT=%TEMP%\pluperfect-%~1.crt
+docker compose -f %FILE% cp %~1:/data/caddy/pki/authorities/local/root.crt "%CERT%" >nul 2>&1
+if errorlevel 1 (
+  echo Could not read %~2's certificate authority, so the browser warns about its addresses.
+  exit /b 0
+)
+powershell -NoProfile -Command "$c = New-Object Security.Cryptography.X509Certificates.X509Certificate2 $env:CERT; if (Test-Path ('Cert:\CurrentUser\Root\' + $c.Thumbprint)) { exit 0 }; Write-Host 'Windows asks once whether to trust %~2 in Docker. Choose Yes, and the browser trusts its addresses.'; certutil -user -addstore Root $env:CERT | Out-Null; exit $LASTEXITCODE"
+if errorlevel 1 echo %~2's certificate authority is not trusted, so the browser warns about its addresses.
+del "%CERT%" >nul 2>&1
 exit /b 0
 
 rem Shows the installer's address, with its install code, while the product is not set up yet.

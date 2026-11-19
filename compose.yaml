@@ -19,6 +19,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      # MySQL's first start makes its database files, which can take several minutes.
+      start_period: 10m
 
   nexus-api:
     image: ghcr.io/pluperfectdata/nexus-api:${NEXUS_VERSION:-local}
@@ -34,10 +36,10 @@ services:
         condition: service_healthy
     environment:
       ConnectionStrings__Nexus: Server=nexus-db;Port=3306;Database=nexus;User ID=nexus;Password=${NEXUS_DB_PASSWORD}
-      Nexus__ClientOrigin: http://localhost:6165
+      Nexus__ClientOrigin: https://localhost:6165
       Nexus__CallbackOrigin: https://127.0.0.1:6164
-    ports:
-      - "127.0.0.1:6163:6163"
+      # Browsers reach the service only through nexus-web, so its forwarding headers say who asked and over what.
+      Nexus__Proxied: "true"
     volumes:
       - nexus-data:/data
 
@@ -54,6 +56,7 @@ services:
       - nexus-api
     ports:
       - "127.0.0.1:6165:6165"
+      - "127.0.0.1:6163:6163"
       - "127.0.0.1:6164:6164"
     volumes:
       - nexus-caddy:/data

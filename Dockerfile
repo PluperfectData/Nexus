@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
-# Two images from one file: --target api is the service, and --target web serves its pages and the HTTPS address
-# providers such as Schwab send people back to. compose.yaml runs both, with MySQL beside them. The shared libraries
-# come in as the jwt and mail build contexts, placed as they sit on disk, since the project references count up to them.
+# Two images from one file: --target api is the service, and --target web serves its pages over HTTPS, and the service
+# behind them. compose.yaml runs both, with MySQL beside them. The shared libraries come in as the jwt and mail build
+# contexts, placed as they sit on disk, since the project references count up to them.
 
-# The pages, built to call the service at localhost:6163, where compose.yaml publishes it.
+# The pages, built to call the service at localhost:6163, where the web image serves it.
 FROM node:24-trixie-slim AS client
-ENV VITE_API_URL=http://localhost:6163
+ENV VITE_API_URL=https://localhost:6163
 WORKDIR /src/Pluperfect.Jwt/client
 COPY --from=jwt client/package.json client/package-lock.json client/tsconfig.json ./
 RUN npm ci
@@ -38,11 +38,15 @@ ENV ASPNETCORE_HTTP_PORTS=6163 \
     Nexus__DataDirectory=/data
 VOLUME /data
 EXPOSE 6163
-HEALTHCHECK --interval=10s --timeout=5s --start-period=60s \
+# The first start brings a new database up to date, which can take several minutes.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10m \
     CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6163 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
 ENTRYPOINT ["dotnet", "Nexus.Service.dll"]
 
 FROM caddy:2-alpine AS web
 COPY deploy/docker/Caddyfile /etc/caddy/Caddyfile
 COPY --from=client /src/Pluperfect.Data/Nexus/Client/dist /srv
-EXPOSE 6165 6164
+EXPOSE 6165 6163 6164
+# Healthy once Caddy has made the authority its certificates come from, which the launcher asks the computer to trust.
+HEALTHCHECK --interval=2s --timeout=5s --start-period=1m \
+    CMD ["test", "-f", "/data/caddy/pki/authorities/local/root.crt"]

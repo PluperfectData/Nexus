@@ -34,6 +34,46 @@ install_code() {
   fi
 }
 
+# Asks this computer to trust the authority Caddy made for this product's addresses, the first time it meets it.
+trust() {
+  cert="$(mktemp)"
+  if ! docker compose -f "$file" cp "$1:/data/caddy/pki/authorities/local/root.crt" "$cert" >/dev/null 2>&1; then
+    echo "Could not read $2's certificate authority, so the browser warns about its addresses."
+    rm -f "$cert"
+    return 0
+  fi
+  case "$(uname -s)" in
+    Darwin)
+      sha="$(openssl x509 -noout -fingerprint -sha1 -in "$cert" | cut -d= -f2 | tr -d :)"
+      if ! security find-certificate -a -Z | grep -q "$sha"; then
+        echo "macOS asks for your password to trust $2 in Docker, so the browser trusts its addresses."
+        security add-trusted-cert -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert" ||
+          echo "$2's certificate authority is not trusted, so the browser warns about its addresses."
+      fi
+      ;;
+    Linux)
+      target=
+      if command -v update-ca-certificates >/dev/null 2>&1; then
+        target="/usr/local/share/ca-certificates/pluperfect-$1.crt"
+        update=update-ca-certificates
+      elif command -v update-ca-trust >/dev/null 2>&1; then
+        target="/etc/pki/ca-trust/source/anchors/pluperfect-$1.crt"
+        update=update-ca-trust
+      fi
+      if [ -n "$target" ] && ! cmp -s "$cert" "$target"; then
+        echo "sudo asks for your password to trust $2 in Docker, so this computer trusts its addresses."
+        { sudo install -m 644 "$cert" "$target" && sudo "$update"; } ||
+          echo "$2's certificate authority is not trusted, so the browser warns about its addresses."
+      fi
+      # Chrome on Linux reads its own store rather than the system's.
+      if command -v certutil >/dev/null 2>&1 && [ -d "$HOME/.pki/nssdb" ]; then
+        certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n "Pluperfect $1" -i "$cert" || true
+      fi
+      ;;
+  esac
+  rm -f "$cert"
+}
+
 open_page() {
   if command -v open >/dev/null 2>&1; then open "$1"; elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1"; fi
 }
@@ -58,13 +98,16 @@ if ! docker compose -f "$file" up --build --detach --wait --wait-timeout 600; th
   exit 1
 fi
 
+trust nexus-web Nexus
+[ "$file" = compose.both.yaml ] && trust scry-web Scry
+
 install_code nexus-api Nexus
 [ "$file" = compose.both.yaml ] && install_code scry-api Scry
 
 echo
-echo "Nexus is running at http://localhost:6165. Docker keeps it running; docker compose stop stops it."
-open_page http://localhost:6165
+echo "Nexus is running at https://localhost:6165. Docker keeps it running; docker compose stop stops it."
+open_page https://localhost:6165
 if [ "$file" = compose.both.yaml ]; then
-  echo "Scry is running at http://localhost:6160."
-  open_page http://localhost:6160
+  echo "Scry is running at https://localhost:6160."
+  open_page https://localhost:6160
 fi

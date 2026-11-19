@@ -51,9 +51,13 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
     private readonly bool _mailToFiles;
 
-    public ServiceFactory(bool installed = true, bool mailToFiles = true)
+    private readonly bool _proxied;
+
+    /// <param name="proxied">Whether the service believes a proxy's forwarding headers, as it does behind Caddy.</param>
+    public ServiceFactory(bool installed = true, bool mailToFiles = true, bool proxied = false)
     {
         _mailToFiles = mailToFiles;
+        _proxied = proxied;
         Directory.CreateDirectory(DataDirectory);
         using var db = NewContext();
         db.Database.EnsureCreated();
@@ -168,6 +172,7 @@ public sealed class ServiceFactory : WebApplicationFactory<Program>
 
         builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.DataDirectory)}", DataDirectory);
         builder.UseSetting("Mail:PickupDirectory", _mailToFiles ? MailDirectory : string.Empty);
+        builder.UseSetting($"{ServiceSettings.Section}:{nameof(ServiceSettings.Proxied)}", _proxied ? "true" : "false");
 
         builder.ConfigureTestServices(services =>
         {

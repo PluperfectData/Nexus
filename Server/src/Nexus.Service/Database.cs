@@ -54,6 +54,8 @@ public sealed class MySqlDatabaseHost : IDatabaseHost
         {
             var options = new DbContextOptionsBuilder<NexusDbContext>().UseMySql(target.ConnectionString, NexusDbContext.ServerVersion).Options;
             await using var db = new NexusDbContext(options);
+            // One schema change on a slow disk can outlast the 30 seconds a query gets.
+            db.Database.SetCommandTimeout(TimeSpan.FromMinutes(10));
             await db.Database.MigrateAsync(ct);
         }
         catch (Exception ex) when (MySqlCause(ex) is { } cause)

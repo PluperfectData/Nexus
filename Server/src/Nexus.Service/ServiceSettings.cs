@@ -24,4 +24,10 @@ public sealed class ServiceSettings
 
     /// <summary>How many days the operator log keeps an entry, from 1 to 365.</summary>
     public int? LogDays { get; set; }
+
+    /// <summary>
+    /// Whether every request comes through a proxy such as Caddy, whose X-Forwarded-For and X-Forwarded-Proto say who
+    /// asked and over what. Only then are those headers believed.
+    /// </summary>
+    public bool Proxied { get; set; }
 }
