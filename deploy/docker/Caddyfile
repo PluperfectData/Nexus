@@ -5,6 +5,19 @@
 	auto_https disable_redirects
 	# A browser sends no server name to an IP address, so this picks the certificate.
 	default_sni 127.0.0.1
+	# A plain http request on an https port, as Docker Desktop's port links send, is redirected to https.
+	servers {
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+	}
+}
+
+# Docker Desktop's links name 127.0.0.1, where the pages' cookies and the service's allowed origin don't apply.
+https://127.0.0.1:6165, https://127.0.0.1:6163 {
+	tls internal
+	redir https://localhost:{http.request.port}{uri} 308
 }
 
 https://localhost:6165 {
@@ -19,6 +32,14 @@ https://localhost:6165 {
 
 https://localhost:6163 {
 	tls internal
+	# Docker Desktop's link for this container opens its lowest port, this one, so a browser asking for the root goes on
+	# to the pages. The service has nothing there.
+	@page {
+		method GET
+		path /
+		header Accept *text/html*
+	}
+	redir @page https://localhost:6165/ 302
 	reverse_proxy nexus-api:6163
 }
 

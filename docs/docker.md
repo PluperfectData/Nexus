@@ -36,6 +36,10 @@ so the first admin may skip the password.
 | `https://127.0.0.1:6164` | Where providers such as Schwab send people back after they sign in |
 | `http://localhost:6168` | Mailpit, where Nexus's mail waits to be read |
 
+Docker Desktop's links to these ports open them at `http://127.0.0.1`, and Caddy sends each one on to its
+`https://localhost` address, where Nexus's cookies and its service's allowed origin apply. Its link for `nexus-web`
+opens the lowest port, 6163, the service's, so a browser asking for that root goes on to the pages.
+
 A development copy uses the same ports, so stop one before starting Docker; the launcher says so when a port is
 taken. Docker keeps the containers running, and starts them again with Docker. Stop them from Docker Desktop, or with
 `docker compose stop` in the Nexus folder.
