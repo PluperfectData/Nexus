@@ -82,8 +82,10 @@ Each connector has its own page in [the documentation](docs/connectors/README.md
 
 ## Quick start
 
-Nexus installs three ways. Each runs it on one computer at `http://localhost:6165`, then sets it up in the browser,
-and each can set up [Scry](https://github.com/PluperfectData/Scry) beside it.
+Nexus installs three ways. Each runs it on one computer, then sets it up in the browser, and each can set up
+[Scry](https://github.com/PluperfectData/Scry) beside it. On Windows and in Docker, Nexus is at
+`https://localhost:6165`, served over HTTPS with a certificate the computer is asked to trust once. From the command
+line, it's at `http://localhost:6165`.
 
 | Way | For | Needs |
 |---|---|---|
@@ -91,7 +93,7 @@ and each can set up [Scry](https://github.com/PluperfectData/Scry) beside it.
 | [In Docker](#in-docker) | Running Nexus in containers, on any computer | Docker Desktop, or Docker on Linux |
 | [From the command line](#from-the-command-line) | Working on Nexus's code | .NET 10, Node.js 24, MySQL 8.4, and Git |
 
-All three use the same addresses, so run one at a time.
+All three use the same ports, so run one at a time.
 
 Every way starts from the code at `Pluperfect.Data/Nexus` in a folder of your choice. Clone it with
 `git clone https://github.com/PluperfectData/Nexus.git Pluperfect.Data/Nexus`, or download the ZIP from GitHub
@@ -104,9 +106,10 @@ Right-click `install.ps1` in the Nexus folder, and choose **Run with PowerShell*
 1. installs what's missing (.NET 10, Node.js, MySQL, and Git) through winget, and fetches the two libraries Nexus
    builds against
 2. asks whether to install Scry too, when it's beside Nexus
-3. builds Nexus, and asks Windows once to trust the certificate for `https://127.0.0.1:6164`, the address providers
-   such as Schwab send people back to
-4. puts a **Nexus** shortcut on the desktop, then starts Nexus with a database server of its own and opens it
+3. builds Nexus, and asks Windows once to trust the .NET development certificate, which serves Nexus's addresses,
+   including `https://127.0.0.1:6164`, where providers such as Schwab send people back
+4. puts a **Nexus** shortcut on the desktop, then starts Nexus with a database server of its own and opens
+   `https://localhost:6165`
 
 The installer page opens at Mail, since Nexus already knows its database and addresses. Then make yourself the
 admin. [Installing on Windows](docs/installing.md) has the detail.
@@ -119,8 +122,9 @@ Start Docker Desktop, or Docker on Linux. Then, in the Nexus folder:
 - **macOS or Linux:** run `sh nexus-docker.sh`.
 
 The launcher fetches the libraries Nexus builds against, and asks whether to start Scry too, linked to Nexus. Then
-it builds and starts Nexus with MySQL beside it, prints the installer's address with its install code, and opens
-Nexus. The first build takes several minutes. [Running Nexus in Docker](docs/docker.md) has the detail.
+it builds and starts Nexus with MySQL beside it, and asks the computer once to trust the certificates Caddy makes for
+Nexus's addresses. It prints the installer's address with its install code, and opens `https://localhost:6165`. The
+first build takes several minutes. [Running Nexus in Docker](docs/docker.md) has the detail.
 
 ### From the command line
 

@@ -16,18 +16,23 @@ Windows 10 or 11, right-click `install.ps1` in that folder and choose **Run with
 3. Asks whether to install Scry too, when Scry sits at `Pluperfect.Data\Scry`. Yes runs Scry's installer as well,
    and starts both.
 4. Builds the service into `data\app\api`, and the pages into `data\app\site`.
-5. Trusts the .NET development certificate for `https://127.0.0.1:6164`. Windows asks once.
+5. Trusts the .NET development certificate, which serves every address below over HTTPS. Windows asks once. Then it
+   copies the certificate into `data`, for the shortcut to serve with.
 6. Puts a **Nexus** shortcut on the desktop, starts Nexus, and opens it.
 
 Running it again rebuilds Nexus from the code in the folder, and skips the programs already installed. Close
-Nexus's window first; the installer stops if Nexus is running.
+Nexus's window first; the installer stops while anything uses port 6163, including a development copy or Nexus in
+Docker.
+
+The development certificate lasts a year. When it runs out, the shortcut says so, and running the installer again
+renews it.
 
 ⚠ **MySQL's installer adds MySQL to the computer, but Nexus doesn't use that server.** It runs one of its own, in its
 data folder, so it never touches another database on the computer.
 
 ## The first run
 
-The browser opens `http://localhost:6165`, and the installer page starts at Mail, then the first admin. Nexus already
+The browser opens `https://localhost:6165`, and the installer page starts at Mail, then the first admin. Nexus already
 knows its database and its addresses, and a page on this computer needs no install code. Then make a workspace.
 [The installer](running.md#the-installer) covers each step.
 
@@ -40,11 +45,11 @@ The desktop shortcut starts Nexus. Its window shows what the service is doing; k
 
 | Address | What |
 |---|---|
-| `http://localhost:6165` | Nexus |
-| `http://localhost:6163` | Its service |
+| `https://localhost:6165` | Nexus |
+| `https://localhost:6163` | Its service |
 | `https://127.0.0.1:6164` | Where providers such as Schwab send people back after they sign in |
 
-These are a development copy's addresses too, so run one or the other, not both. Nexus's database server listens on
+A development copy uses the same ports, so run one or the other, not both. Nexus's database server listens on
 `127.0.0.1:6167`, for Nexus alone.
 
 ## Where everything is
@@ -59,6 +64,7 @@ Everything an install keeps is in `data` in the Nexus folder, which git ignores:
 | `data\mysql-client.cnf` | Its root password again, for the MySQL tools the shortcut runs |
 | `data\api` | What the service keeps: its settings in `instance.json`, its keys, uploaded files, and its logs |
 | `data\install.json` | Where the installer found .NET and MySQL |
+| `data\certificate.pem`, `data\certificate.key` | The development certificate and its key, which the pages and the service serve with |
 | `data\logs\mysql.log` | The database server's log |
 
 ## Removing it

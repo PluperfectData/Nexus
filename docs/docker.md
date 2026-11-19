@@ -22,26 +22,40 @@ The launcher:
 2. Asks whether to start Scry too, when Scry sits at `Pluperfect.Data/Scry`. See [Running both](#running-both).
 3. Makes the database's password the first time, in `.env` beside `compose.yaml`, which git ignores.
 4. Builds the images from the folder and starts them. The first build takes several minutes.
-5. Prints the installer's address with its install code while Nexus isn't set up, and opens Nexus.
+5. Asks the computer to trust Nexus's certificates, the first time. See [Certificates](#certificates).
+6. Prints the installer's address with its install code while Nexus isn't set up, and opens Nexus.
 
 The installer page asks for that install code, since requests through Docker don't reach Nexus from this computer as
 Nexus sees it. Then it asks for Mail and the first admin; Nexus already knows its database and addresses.
 
 | Address | What |
 |---|---|
-| `http://localhost:6165` | Nexus |
-| `http://localhost:6163` | Its service |
+| `https://localhost:6165` | Nexus |
+| `https://localhost:6163` | Its service |
 | `https://127.0.0.1:6164` | Where providers such as Schwab send people back after they sign in |
 
-These are a development copy's addresses too, so stop one before starting Docker; the launcher says so when a port is
+A development copy uses the same ports, so stop one before starting Docker; the launcher says so when a port is
 taken. Docker keeps the containers running, and starts them again with Docker. Stop them from Docker Desktop, or with
 `docker compose stop` in the Nexus folder.
 
-## The callback's certificate
+## Certificates
 
-Caddy, in the `nexus-web` container, serves `https://127.0.0.1:6164` with a certificate it makes itself. The first
-time a provider sends you back, the browser warns that it doesn't know the certificate; continue to the page. The
-certificate is kept in the `nexus-caddy` volume, so it stays the same across restarts.
+Caddy, in the `nexus-web` container, serves all three addresses over HTTPS, with certificates from an authority it
+makes itself and keeps in the `nexus-caddy` volume. The launcher adds that authority to the ones the computer trusts,
+the first time it meets it:
+
+| On | What happens |
+|---|---|
+| Windows | Windows asks whether to trust it. Choose **Yes**. It goes in your account's trusted roots. |
+| macOS | macOS asks for your password, and it goes in your login keychain. |
+| Linux | `sudo` asks for your password, and it goes in the system's trusted certificates. Chrome's own store gets it too, when `certutil` is installed. |
+
+⚠ Firefox on Linux keeps its own list. Import `root.crt` from the `nexus-web` container in its certificate settings,
+or it warns at each address.
+
+Declining leaves the browser warning at each address, and Nexus's pages can't reach the service until you open
+`https://localhost:6163` once and continue past the warning. Deleting the `nexus-caddy` volume makes a new authority,
+which the launcher asks about on its next run.
 
 ## What runs
 
@@ -49,23 +63,26 @@ certificate is kept in the `nexus-caddy` volume, so it stays the same across res
 
 | Service | Image | What |
 |---|---|---|
-| `nexus-web` | `ghcr.io/pluperfectdata/nexus-web` | Caddy, serving the pages and the callback address |
-| `nexus-api` | `ghcr.io/pluperfectdata/nexus-api` | The service |
+| `nexus-web` | `ghcr.io/pluperfectdata/nexus-web` | Caddy, serving the pages, the service, and the callback address over HTTPS |
+| `nexus-api` | `ghcr.io/pluperfectdata/nexus-api` | The service, which browsers reach only through `nexus-web` |
 | `nexus-db` | `mysql:8.4` | The `nexus` database, not published outside Docker |
 
 Both of Nexus's images come from the one `Dockerfile`, as its `api` and `web` targets. Pluperfect.Jwt and
 Pluperfect.Mail come into the build as its `jwt` and `mail` build contexts.
 
 The data is in three Docker volumes: `nexus-database` holds the database, `nexus-data` what the service keeps (its
-settings, keys, files, and logs), and `nexus-caddy` the callback's certificate. ⚠ `docker compose down --volumes`
-deletes all three, and everything Nexus holds with them.
+settings, keys, files, and logs), and `nexus-caddy` Caddy's authority and certificates. ⚠ `docker compose down
+--volumes` deletes all three, and everything Nexus holds with them.
+
+Since every browser request reaches the service through Caddy, `compose.yaml` sets `Nexus__Proxied`, and the service reads
+who asked and over what from Caddy's forwarding headers. See [configuration](configuration.md).
 
 ## Running both
 
 With Scry beside Nexus, yes to the launcher's question starts `compose.both.yaml`: Nexus's and Scry's compose files
 together, on one network. Scry's server reaches Nexus at `http://nexus-api:6163`, which Scry's Link Nexus form starts
-with, and tells Nexus to push rows to `http://scry-api:6161`. Link them from a Scry workspace's Settings page, as on
-any other install. Scry's own launcher can start both the same way.
+with, and tells Nexus to push rows to `http://scry-api:6161`. Those two addresses stay inside Docker's network, so
+they are plain HTTP. Link them from a Scry workspace's Settings page, as on any other install. Scry's own launcher can start both the same way.
 
 Each product keeps its own volumes, so its data is the same whether it runs alone or with the other.
 
