@@ -79,11 +79,21 @@ public sealed partial class SyncWorker(PendingRuns queue, IServiceScopeFactory s
             // The runner records every failure it can; this one, such as a lost database, could not be recorded.
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                LogFailure(logger, ex, pending.SyncId);
+                if (DatabaseStart.NotAnswering(ex))
+                {
+                    LogDatabaseLost(logger, pending.SyncId);
+                }
+                else
+                {
+                    LogFailure(logger, ex, pending.SyncId);
+                }
             }
         }
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Sync {SyncId} could not run.")]
     private static partial void LogFailure(ILogger logger, Exception ex, int syncId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Sync {SyncId} could not run: the database is not answering.")]
+    private static partial void LogDatabaseLost(ILogger logger, int syncId);
 }

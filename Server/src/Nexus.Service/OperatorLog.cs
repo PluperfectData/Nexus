@@ -230,7 +230,14 @@ public sealed partial class LogPruner(Installation installation, IServiceScopeFa
                 }
                 catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
                 {
-                    LogFailure(logger, ex);
+                    if (DatabaseStart.NotAnswering(ex))
+                    {
+                        LogDatabaseLost(logger);
+                    }
+                    else
+                    {
+                        LogFailure(logger, ex);
+                    }
                 }
             }
         }
@@ -239,4 +246,7 @@ public sealed partial class LogPruner(Installation installation, IServiceScopeFa
 
     [LoggerMessage(Level = LogLevel.Error, Message = "The operator log could not be pruned.")]
     private static partial void LogFailure(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The operator log could not be pruned: the database is not answering. The next try is in an hour.")]
+    private static partial void LogDatabaseLost(ILogger logger);
 }

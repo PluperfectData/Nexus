@@ -149,7 +149,16 @@ public sealed partial class Installation(
     {
         try
         {
-            await database.PrepareAsync(connectionString, ct);
+            var waited = await DatabaseStart.WaitAsync(
+                c => database.PrepareAsync(connectionString, c),
+                DatabaseStart.Limit,
+                DatabaseStart.Pause,
+                ex => LogNotAnswering(logger, ex.Message, (int)DatabaseStart.Limit.TotalSeconds),
+                ct);
+            if (waited is { } time)
+            {
+                LogAnswered(logger, (int)time.TotalSeconds);
+            }
         }
         catch (DatabaseException ex)
         {
@@ -191,4 +200,11 @@ public sealed partial class Installation(
     private static partial void LogRecovery(ILogger logger, string page, string code);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Nexus cannot open its database: {Problem}")]
-    private static partial void LogUnreachable(ILogger logger, string problem);}
+    private static partial void LogUnreachable(ILogger logger, string problem);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Nexus's database is not answering yet ({Problem}); waiting up to {Seconds} seconds for it.")]
+    private static partial void LogNotAnswering(ILogger logger, string problem, int seconds);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Nexus's database answered after {Seconds} seconds.")]
+    private static partial void LogAnswered(ILogger logger, int seconds);
+}

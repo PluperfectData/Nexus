@@ -267,11 +267,21 @@ public sealed partial class SignInWatcher(Installation installation, IServiceSco
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
-                LogFailure(logger, ex);
+                if (DatabaseStart.NotAnswering(ex))
+                {
+                    LogDatabaseLost(logger);
+                }
+                else
+                {
+                    LogFailure(logger, ex);
+                }
             }
         }
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "The connections' sign-ins could not be checked.")]
     private static partial void LogFailure(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The connections' sign-ins could not be checked: the database is not answering. The next check is in a minute.")]
+    private static partial void LogDatabaseLost(ILogger logger);
 }
