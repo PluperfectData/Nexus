@@ -28,6 +28,39 @@ The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` b
 the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pluperfect.Jwt/client` once with
 `npm run build` before installing the client.
 
+## In Docker, with the -dev containers
+
+Instead of installing .NET, MySQL, and Mailpit, the code can run in containers that reload as it does from the code.
+With Docker running, double-click `Nexus Dev.cmd` on Windows, or run `sh nexus-dev.sh` on macOS or Linux. The
+launcher:
+
+1. Fetches Pluperfect.Jwt and Pluperfect.Mail beside `Pluperfect.Data` with Git, when they aren't there.
+2. Asks whether to start Scry's -dev containers too, when Scry sits at `Pluperfect.Data/Scry`.
+3. Makes the database's password the first time, in `.env.dev` beside `compose.dev.yaml`, which git ignores.
+4. Builds the images from `Dockerfile.dev` and starts the containers. The first build takes several minutes.
+5. Asks the computer to trust the authority behind the callback address, the first time, as the
+   [Docker launcher](docker.md#certificates) does.
+6. Opens `http://localhost:6165`, then watches the folders.
+
+| Container | What |
+|---|---|
+| `nexus-api-dev` | The service, under `dotnet watch`, in Development, at `http://localhost:6163` |
+| `nexus-web-dev` | The pages, under Vite's dev server, at `http://localhost:6165` |
+| `nexus-callback-dev` | Caddy, serving `https://127.0.0.1:6164`, where providers such as Schwab send people back, to the service |
+| `nexus-db-dev` | MySQL, at 127.0.0.1, port 6167, for MySQL Workbench or the `mysql` client, as `nexus`, with the `NEXUS_DEV_DB_PASSWORD` in `.env.dev` |
+| `nexus-mail-dev` | Mailpit, at `http://localhost:6168` |
+
+A file saved under `Server/src`, `Client/src`, or `Client/public`, or under Pluperfect.Jwt's or Pluperfect.Mail's
+`src`, is copied into its container: the service takes the change, restarting when it must, and the page reloads. A
+change to `package.json`, `package-lock.json`, `Directory.Packages.props`, or Pluperfect.Jwt's client rebuilds its
+image. The window shows the containers' lines, including the installer's address with its install code on a new
+database, since requests reach the service through Docker. **Ctrl+C** stops them.
+
+Your own builds don't reach the containers; they build their own. They take development's ports, so run the code, the
+-dev containers, or [Docker](docker.md) one at a time. Their data is in the volumes `nexus-dev-database`,
+`nexus-dev-data`, `nexus-dev-mail`, and `nexus-dev-caddy`. Removing them in Docker Desktop starts the -dev containers
+over.
+
 ## The installer
 
 An instance starts with nothing set. Until it has a database, a client address, and an admin, every route but

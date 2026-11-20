@@ -399,8 +399,9 @@ Server/src/Nexus.Service/data/
 docs/TaskBoard.md
 docs/Records.md
 
-# The Docker launchers keep each database password here.
+# The Docker launchers keep each database password here, and the dev launchers in .env.dev.
 /.env
+/.env.dev
 
 # What install.ps1 builds, and the installed copy keeps: its database, settings, and logs.
 /data/

@@ -4,7 +4,8 @@
 
 Nexus in three containers, on Windows, macOS, or Linux, instead of the [installer](installing.md)'s programs.
 Docker Desktop is a large install, so on Windows the installer is the simpler way in; Docker is for anyone who has it
-already.
+already. For working on the code in Docker, see
+[In Docker, with the -dev containers](running.md#in-docker-with-the--dev-containers).
 
 ## Starting it
 

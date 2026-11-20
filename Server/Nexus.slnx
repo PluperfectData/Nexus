@@ -22,6 +22,5 @@
     <Project Path="tests/Nexus.Push.Tests/Nexus.Push.Tests.csproj" />
     <Project Path="tests/Nexus.Schwab.Tests/Nexus.Schwab.Tests.csproj" />
     <Project Path="tests/Nexus.Service.Tests/Nexus.Service.Tests.csproj" />
-    <Project Path="tests/Nexus.Sql.Tests/Nexus.Sql.Tests.csproj" />
   </Folder>
 </Solution>

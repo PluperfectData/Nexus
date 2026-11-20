@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+
+# The -dev containers, for working on the code. compose.dev.yaml builds both targets and copies each saved file in, and
+# each reloads. The release images are the Dockerfile beside this one. The shared libraries come in as the jwt and
+# mail build contexts, placed as they sit on disk, since the project references count up to them.
+
+# The service, under dotnet watch, in Development, as from the code.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
+WORKDIR /src
+COPY --from=jwt Directory.Build.props Directory.Packages.props global.json Pluperfect.Jwt/
+COPY --from=jwt src/ Pluperfect.Jwt/src/
+COPY --from=mail Directory.Build.props Directory.Packages.props global.json Pluperfect.Mail/
+COPY --from=mail src/ Pluperfect.Mail/src/
+# A build on the computer the libraries came from leaves its own bin and obj beside their source.
+RUN find Pluperfect.Jwt Pluperfect.Mail -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
+COPY Server/ Pluperfect.Data/Nexus/Server/
+WORKDIR /src/Pluperfect.Data/Nexus/Server/src/Nexus.Service
+RUN dotnet restore
+ENV ASPNETCORE_ENVIRONMENT=Development \
+    ASPNETCORE_HTTP_PORTS=6163 \
+    Nexus__DataDirectory=/data \
+    DOTNET_WATCH_RESTART_ON_RUDE_EDIT=true
+VOLUME /data
+EXPOSE 6163
+CMD ["dotnet", "watch", "run", "--no-launch-profile", "--non-interactive"]
+
+# The pages, under Vite's dev server.
+FROM node:24-trixie-slim AS web
+WORKDIR /src/Pluperfect.Jwt/client
+COPY --from=jwt client/package.json client/package-lock.json client/tsconfig.json ./
+RUN npm ci
+COPY --from=jwt client/src/ src/
+RUN npm run build
+WORKDIR /src/Pluperfect.Data/Nexus/Client
+COPY Client/package.json Client/package-lock.json ./
+RUN npm ci
+COPY Client/ ./
+EXPOSE 6165
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

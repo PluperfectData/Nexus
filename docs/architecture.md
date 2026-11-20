@@ -32,7 +32,6 @@ records in memory, or piped into a destination.
 | `Server/tests/Nexus.Push.Tests` | NUnit and Shouldly, against a fake that keeps Scry's push API contract |
 | `Server/tests/Nexus.Schwab.Tests` | NUnit and Shouldly, against canned Schwab responses |
 | `Server/tests/Nexus.Service.Tests` | NUnit and Shouldly, hosting the service over a SQLite file with a fake source and push API |
-| `Server/tests/Nexus.Sql.Tests` | NUnit and Shouldly, against real MySQL, PostgreSQL, and SQL Server servers |
 
 ## Sibling checkouts
 

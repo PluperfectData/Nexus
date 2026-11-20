@@ -1,0 +1,13 @@
+# The -dev containers' address that providers such as Schwab send people back to after signing in, over HTTPS as from
+# the code. Caddy makes its certificate from its own authority, which the dev launcher asks this computer to trust.
+{
+	skip_install_trust
+	auto_https disable_redirects
+	# A browser sends no server name to an IP address, so this picks the certificate.
+	default_sni 127.0.0.1
+}
+
+https://127.0.0.1:6164 {
+	tls internal
+	reverse_proxy nexus-api-dev:6163
+}

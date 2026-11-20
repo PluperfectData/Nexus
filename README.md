@@ -266,6 +266,10 @@ Contributions are welcome. In short:
 3. Open a pull request into `main`. CI must pass, and a maintainer reviews it.
 4. Pull requests are squash-merged, so each becomes one commit on `main`.
 
+To run the code while you work on it, start it [from the command line](docs/running.md), or in Docker, in the
+-dev containers that `Nexus Dev.cmd` or `nexus-dev.sh` starts, which reload on each save: [In Docker, with the -dev
+containers](docs/running.md#in-docker-with-the--dev-containers).
+
 Contributing comes with terms: by contributing, you give the maintainer permission to relicense your contribution.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start.
 
