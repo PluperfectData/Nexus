@@ -6,7 +6,7 @@
 # Run it in Terminal with: bash install.sh
 # --alongside is how Scry's installer runs this one: it neither asks about Scry nor starts Nexus.
 
-set -euo pipefail
+set -Eeuo pipefail
 cd "$(dirname "$0")"
 root=$(pwd)
 data="$root/data"
@@ -18,6 +18,8 @@ mail="$repos/Pluperfect.Mail"
 scry=$(cd "$root/.." && pwd)/Scry
 api_port=6163
 mysql_version=8.4.13
+# The PATH this started with, which the other product's installer gets, so each finds its own programs.
+original_path=$PATH
 alongside=false
 [ "${1:-}" = --alongside ] && alongside=true
 
@@ -26,7 +28,8 @@ stopped() {
   printf '\n\033[31m%s\033[0m\n' "$1"
   exit 1
 }
-trap 'stopped "The install stopped at line $LINENO. The lines above say why."' ERR
+# -E runs the trap inside functions and $(...) as well; only the top level reports, so a failure is reported once.
+trap 'if [ "$BASH_SUBSHELL" -eq 0 ]; then stopped "The install stopped at line $LINENO. The lines above say why."; else exit 1; fi' ERR
 
 os=$(uname -s)
 case "$(uname -m)" in
@@ -41,12 +44,13 @@ listening() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 # Installs Linux packages through apt or dnf, which asks for the password: the apt names first, then dnf's.
 apt_updated=false
 apt_refresh() {
+  command -v apt-get >/dev/null 2>&1 || return 0
   if [ "$apt_updated" = false ]; then sudo apt-get update; apt_updated=true; fi
 }
 packages() {
   if command -v apt-get >/dev/null 2>&1; then
     apt_refresh
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y $1
+    sudo apt-get install -y $1
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y $2
   else
@@ -54,14 +58,14 @@ packages() {
   fi
 }
 
-# The newest apt package whose name matches, since Debian and Ubuntu number some libraries by release.
+# The newest apt package whose name matches, since Debian and Ubuntu number some libraries by release. It reads the
+# package lists apt_refresh fetched, which runs outside $(...) so its output is not taken for the answer.
 apt_newest() {
   command -v apt-cache >/dev/null 2>&1 || return 0
-  apt_refresh
   apt-cache pkgnames | grep -E "$1" | sort -V | tail -n 1
 }
 
-has_library() { PATH="$PATH:/usr/sbin:/sbin" ldconfig -p | grep -q "$1"; }
+has_library() { PATH="$PATH:/usr/sbin:/sbin" ldconfig -p | grep "$1" >/dev/null; }
 
 download() {
   curl -fL --retry 3 --progress-bar -o "$2" "$1"
@@ -158,8 +162,8 @@ else
   if ! command -v tar >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then packages 'tar xz-utils' 'tar xz'; fi
 
   # .NET runs on the system's ICU and OpenSSL.
-  has_library libicuuc.so || packages "$(apt_newest '^libicu[0-9]+$')" libicu
-  has_library libssl.so.3 || packages "$(apt_newest '^libssl3(t64)?$')" openssl-libs
+  if ! has_library libicuuc.so; then apt_refresh; packages "$(apt_newest '^libicu[0-9]+$')" libicu; fi
+  if ! has_library libssl.so.3; then apt_refresh; packages "$(apt_newest '^libssl3(t64)?$')" openssl-libs; fi
 
   dotnet=$(command -v dotnet || true)
   has_dotnet "$dotnet" || dotnet="$tools/dotnet/dotnet"
@@ -209,7 +213,7 @@ else
       LD_LIBRARY_PATH="$compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$mysql_bin/$program" | grep 'not found' || true
     done | sort -u
   }
-  if missing | grep -q libaio; then
+  if missing | grep libaio >/dev/null; then
     aio=$(ls /usr/lib/*/libaio.so.1t64 /usr/lib64/libaio.so.1t64 2>/dev/null | head -n 1 || true)
     if [ -z "$aio" ]; then
       step "Installing the libaio library MySQL needs"
@@ -218,11 +222,11 @@ else
     fi
     if [ -n "$aio" ]; then mkdir -p "$compat" && ln -sf "$aio" "$compat/libaio.so.1"; fi
   fi
-  if missing | grep -q libnuma; then
+  if missing | grep libnuma >/dev/null; then
     step "Installing the libnuma library MySQL needs"
     packages libnuma1 numactl-libs
   fi
-  if missing | grep -q -e libncurses -e libtinfo; then
+  if missing | grep -e libncurses -e libtinfo >/dev/null; then
     step "Installing the ncurses library MySQL's client needs"
     packages libncurses6 ncurses-libs
   fi
@@ -253,7 +257,8 @@ checkout Pluperfect.Mail "$mail" https://github.com/mnwachukwu/Pluperfect.Mail.g
 
 step 'Building the service'
 rm -rf "$app/api.new"
-"$dotnet" publish "$root/Server/src/Nexus.Service/Nexus.Service.csproj" -c Release -o "$app/api.new"
+# Without --disable-build-servers, the compiler and MSBuild servers stay running after the install ends.
+"$dotnet" publish "$root/Server/src/Nexus.Service/Nexus.Service.csproj" -c Release -o "$app/api.new" --disable-build-servers
 rm -rf "$app/api"
 mv "$app/api.new" "$app/api"
 
@@ -264,10 +269,15 @@ npm ci --prefix "$root/Client"
 VITE_API_URL="https://localhost:$api_port" npm run build --prefix "$root/Client" -- --outDir "$app/site" --emptyOutDir
 
 step "Trusting the certificate for Nexus's addresses, and for https://127.0.0.1:6164, where providers such as Schwab send people back"
+# Chrome and Edge on Linux keep certificates in ~/.pki/nssdb, which they make on their first run. Made here when it is
+# missing, so the certificate is trusted even before the browser has been opened.
+if [ "$os" = Linux ] && [ ! -d "$HOME/.pki/nssdb" ]; then
+  mkdir -p "$HOME/.pki/nssdb" && certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password
+fi
 if "$dotnet" dev-certs https --check --trust >/dev/null 2>&1; then echo 'The certificate is trusted.'
 else
   [ "$os" = Darwin ] && echo 'macOS asks for your password to trust it.'
-  "$dotnet" dev-certs https --trust || echo 'The certificate is not trusted, so the browser warns about Nexus'"'"'s addresses.'
+  "$dotnet" dev-certs https --trust || echo 'The certificate is not trusted everywhere, so a browser may warn about Nexus'"'"'s addresses.'
 fi
 # PEM files in data, which start.ts serves the pages and the service with.
 rm -f "$data/certificate.new.pem" "$data/certificate.new.key"
@@ -280,6 +290,7 @@ if [ -n "$mailpit" ] && [ -x "$mailpit" ]; then mailpit_json="\"$mailpit\""; els
 cat > "$data/install.json.tmp" <<EOF
 {
   "dotnet": "$dotnet",
+  "node": "$node",
   "mysqlBin": "$mysql_bin",
   "mailpit": $mailpit_json
 }
@@ -307,7 +318,7 @@ fi
 
 if [ "$with_scry" = true ]; then
   step 'Installing Scry'
-  bash "$scry/install.sh" --alongside
+  PATH="$original_path" bash "$scry/install.sh" --alongside
   if [ "$os" = Darwin ]; then
     osascript -e "tell application \"Terminal\" to do script \"sh '$scry/start.sh'\"" >/dev/null
   elif command -v gtk-launch >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
