@@ -44,4 +44,4 @@ Nexus is and get it running, start with the [README](../README.md).
 - **[How Nexus is built](architecture.md)**: the repository's projects, and the checkouts the service builds against
   - [The repository](architecture.md#the-repository)
   - [Sibling checkouts](architecture.md#sibling-checkouts)
-- **[Building and testing](building.md)**: the SDK, the tests, and the database servers the SQL tests need
+- **[Building and testing](building.md)**: the SDK and the tests
