@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds Nexus's images and starts Nexus in Docker, then opens it in the browser. With Scry beside this folder, it can
-# start Scry too, linked to Nexus. Run it with: sh nexus-docker.sh
+# start Scry too, linked to Nexus. Run it with: sh nexus.sh
 set -eu
 cd "$(dirname "$0")"
 export COMPOSE_IGNORE_ORPHANS=1

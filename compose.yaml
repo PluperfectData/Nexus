@@ -1,5 +1,5 @@
 # Nexus in Docker: the service, its pages, and MySQL, on this computer only, at the addresses development uses.
-# "Nexus Docker.cmd" on Windows or nexus-docker.sh on macOS and Linux builds and starts it. compose.both.yaml runs it
+# "Nexus Docker.cmd" on Windows or nexus.sh on macOS and Linux builds and starts it. compose.both.yaml runs it
 # beside Scry. Setting NEXUS_VERSION to a release, such as 0.2.0, and running "docker compose pull" uses that
 # release's published images instead of building.
 name: pluperfect-data

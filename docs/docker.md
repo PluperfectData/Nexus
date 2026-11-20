@@ -15,7 +15,7 @@ Desktop, or Docker on Linux, and wait until it is running. Then, in the Nexus fo
 | On | Run |
 |---|---|
 | Windows | Double-click `Nexus Docker.cmd` |
-| macOS or Linux | `sh nexus-docker.sh` |
+| macOS or Linux | `sh nexus.sh` |
 
 The launcher:
 

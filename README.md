@@ -119,7 +119,7 @@ admin. [Installing on Windows](docs/installing.md) has the detail.
 Start Docker Desktop, or Docker on Linux. Then, in the Nexus folder:
 
 - **Windows:** double-click `Nexus Docker.cmd`.
-- **macOS or Linux:** run `sh nexus-docker.sh`.
+- **macOS or Linux:** run `sh nexus.sh`.
 
 The launcher fetches the libraries Nexus builds against, and asks whether to start Scry too, linked to Nexus. Then
 it builds and starts Nexus with MySQL beside it, and asks the computer once to trust the certificates Caddy makes for
