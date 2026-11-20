@@ -5,7 +5,7 @@ Nexus is and get it running, start with the [README](../README.md).
 
 ## Running an instance
 
-- **[Installing on Windows](installing.md)**: the one-click installer, the first run, and where everything is
+- **[Installing](installing.md)**: the installer for Windows, macOS, and Linux, the first run, and where everything is
 - **[Running Nexus in Docker](docker.md)**: the launcher, the containers, running Nexus beside Scry, and published releases
 - **[Running Nexus](running.md)**: starting it on your machine, and the installer that sets an instance up
   - [Starting the service and the client](running.md#starting-the-service-and-the-client)

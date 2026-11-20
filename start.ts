@@ -1,5 +1,6 @@
 // Starts Nexus on this computer, with its own MySQL server and Mailpit, the service, and its pages, and opens it in the
-// browser. The Nexus shortcut that install.ps1 puts on the desktop runs it. Ctrl+C, or closing the window, stops them all.
+// browser. The Nexus shortcut that install.ps1 puts on the desktop runs it, and start.sh does on macOS and Linux.
+// Ctrl+C, or closing the window, stops them all.
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { randomBytes, X509Certificate } from 'node:crypto'
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
@@ -24,7 +25,7 @@ const app = join(data, 'app')
 const logs = join(data, 'logs')
 const datadir = join(data, 'mysql')
 const clientFile = join(data, 'mysql-client.cnf')
-// The .NET development certificate, which install.ps1 trusts and exports here for the pages and the service.
+// The .NET development certificate, which the installer trusts and exports here for the pages and the service.
 const certificateFile = join(data, 'certificate.pem')
 const certificateKeyFile = join(data, 'certificate.key')
 
@@ -32,6 +33,10 @@ const certificateKeyFile = join(data, 'certificate.key')
 type Tools = { dotnet: string; mysqlBin: string; mailpit: string | null }
 
 type Secrets = { rootPassword: string; databasePassword: string }
+
+const windows = process.platform === 'win32'
+const exe = (name: string) => (windows ? `${name}.exe` : name)
+const INSTALLER = windows ? 'install.ps1' : 'bash install.sh'
 
 /** A window opened from the shortcut closes when this exits, so a failure waits to be read. */
 function stopAfterReading(message: string, code = 1): void {
@@ -63,7 +68,13 @@ function answering(url: string, ca: string): Promise<boolean> {
 }
 
 function openBrowser(): void {
-  spawn('cmd', ['/c', 'start', '', SITE], { stdio: 'ignore', detached: true }).unref()
+  const [command, args] = windows
+    ? ['cmd', ['/c', 'start', '', SITE]]
+    : [process.platform === 'darwin' ? 'open' : 'xdg-open', [SITE]]
+  // A computer with no desktop has no xdg-open; the address is printed either way.
+  const opener = spawn(command, args, { stdio: 'ignore', detached: true })
+  opener.on('error', () => {})
+  opener.unref()
 }
 
 /** The database passwords, made the first time and kept in data/secrets.json. */
@@ -77,7 +88,7 @@ function secrets(): Secrets {
 
 /** A MySQL server of Nexus's own in data/mysql, on its own port, so it never touches another MySQL. */
 async function startDatabase(tools: Tools, passwords: Secrets): Promise<void> {
-  const bin = (name: string) => join(tools.mysqlBin, `${name}.exe`)
+  const bin = (name: string) => join(tools.mysqlBin, exe(name))
   // --defaults-extra-file must come first, and keeps the root password off the command line.
   writeAtomically(clientFile, `[client]\nuser=root\npassword=${passwords.rootPassword}\nhost=127.0.0.1\nport=${DATABASE_PORT}\n`)
   const asRoot = (tool: string, args: string[]) => run(bin(tool), [`--defaults-extra-file=${clientFile}`, ...args])
@@ -90,8 +101,10 @@ async function startDatabase(tools: Tools, passwords: Secrets): Promise<void> {
   }
 
   if (!asRoot('mysqladmin', ['ping']).ok) {
+    // Outside Windows, every MySQL defaults to the same socket in /tmp, so this one keeps its own.
+    const socket = windows ? [] : [`--socket=${join(data, 'mysql.sock')}`]
     const server = spawn(bin('mysqld'), [`--datadir=${datadir}`, `--port=${DATABASE_PORT}`, '--bind-address=127.0.0.1', '--mysqlx=OFF',
-      `--log-error=${join(logs, 'mysql.log')}`], { stdio: 'ignore', detached: true })
+      ...socket, `--log-error=${join(logs, 'mysql.log')}`], { stdio: 'ignore', detached: true })
     server.unref()
     let up = false
     for (let waited = 0; waited < 60_000 && !up; waited += 1000) {
@@ -116,7 +129,7 @@ async function startDatabase(tools: Tools, passwords: Secrets): Promise<void> {
 /** Mailpit, which keeps the mail Nexus sends for reading on its own page, with its inbox in data/mailpit.db. */
 function startMailpit(tools: Tools): ChildProcess | null {
   if (!tools.mailpit) {
-    console.warn('Mailpit is not installed, so Nexus sends no mail until its Settings page sets up Postmark. Run install.ps1 again to install it.')
+    console.warn(`Mailpit is not installed, so Nexus sends no mail until its Settings page sets up Postmark. Run ${INSTALLER} again to install it.`)
     return null
   }
   const mailpit = spawn(tools.mailpit, ['--listen', `127.0.0.1:${MAILPIT_PORT}`, '--smtp', '127.0.0.1:0', '--database', join(data, 'mailpit.db')], {
@@ -129,7 +142,7 @@ function startMailpit(tools: Tools): ChildProcess | null {
 }
 
 function stopDatabase(tools: Tools): void {
-  run(join(tools.mysqlBin, 'mysqladmin.exe'), [`--defaults-extra-file=${clientFile}`, 'shutdown'])
+  run(join(tools.mysqlBin, exe('mysqladmin')), [`--defaults-extra-file=${clientFile}`, 'shutdown'])
 }
 
 const TYPES: Record<string, string> = {
@@ -170,13 +183,13 @@ async function main(): Promise<void> {
   const toolsFile = join(data, 'install.json')
   const installed = [toolsFile, certificateFile, certificateKeyFile, join(app, 'api', 'Nexus.Service.dll'), join(app, 'site', 'index.html')]
   if (!installed.every((file) => existsSync(file))) {
-    stopAfterReading('Nexus is not installed yet. Run install.ps1 first, as the README says.')
+    stopAfterReading(`Nexus is not installed yet. Run ${INSTALLER} first, as the README says.`)
     return
   }
   const cert = readFileSync(certificateFile, 'utf8')
   const expires = new Date(new X509Certificate(cert).validTo)
   if (expires.getTime() < Date.now()) {
-    stopAfterReading(`The certificate Nexus serves its addresses with expired on ${expires.toLocaleDateString()}. Run install.ps1 again to renew it.`)
+    stopAfterReading(`The certificate Nexus serves its addresses with expired on ${expires.toLocaleDateString()}. Run ${INSTALLER} again to renew it.`)
     return
   }
   if ((await answering(`${API}/health`, cert)) && (await answering(SITE, cert))) {

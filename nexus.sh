@@ -1,12 +1,34 @@
 #!/bin/sh
-# Builds Nexus's images and starts Nexus in Docker, then opens it in the browser. With Scry beside this folder, it can
-# start Scry too, linked to Nexus. Run it with: sh nexus.sh
+# Builds Nexus's images and starts Nexus in Docker, then opens it in the browser, installing Docker Engine first on
+# Linux if it is missing. With Scry beside this folder, it can start Scry too, linked to Nexus.
+# Run it with: sh nexus.sh
 set -eu
 cd "$(dirname "$0")"
 export COMPOSE_IGNORE_ORPHANS=1
 
+if ! command -v docker >/dev/null 2>&1; then
+  if [ "$(uname -s)" = Darwin ]; then
+    echo "Docker is not installed. Install Docker Desktop, start it, then run this again."
+    exit 1
+  fi
+  echo "Docker is not installed. Installing Docker Engine with Docker's own script; it asks for your password."
+  script=$(mktemp)
+  if command -v curl >/dev/null 2>&1; then curl -fsSL https://get.docker.com -o "$script"; else wget -qO "$script" https://get.docker.com; fi
+  sudo sh "$script"
+  rm -f "$script"
+fi
+
+docker=docker
 if ! docker info >/dev/null 2>&1; then
-  echo "Docker is not running. Start Docker, then run this again."
+  if [ "$(uname -s)" = Darwin ]; then
+    echo "Docker is not running. Start Docker Desktop, then run this again."
+    exit 1
+  fi
+  docker="sudo docker"
+  $docker info >/dev/null 2>&1 || sudo systemctl start docker
+fi
+if ! $docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose is missing. Install the docker-compose-plugin package, then run this again."
   exit 1
 fi
 
@@ -29,7 +51,7 @@ password() {
 
 # Shows the installer's address, with its install code, while the product is not set up yet.
 install_code() {
-  if docker compose -f "$file" logs --no-log-prefix "$1" | grep "is not set up yet"; then
+  if $docker compose -f "$file" logs --no-log-prefix "$1" | grep "is not set up yet"; then
     echo "Open the address above to set $2 up, and enter that install code."
   fi
 }
@@ -37,7 +59,7 @@ install_code() {
 # Asks this computer to trust the authority Caddy made for this product's addresses, the first time it meets it.
 trust() {
   cert="$(mktemp)"
-  if ! docker compose -f "$file" cp "$1:/data/caddy/pki/authorities/local/root.crt" "$cert" >/dev/null 2>&1; then
+  if ! $docker compose -f "$file" cp "$1:/data/caddy/pki/authorities/local/root.crt" "$cert" >/dev/null 2>&1; then
     echo "Could not read $2's certificate authority, so the browser warns about its addresses."
     rm -f "$cert"
     return 0
@@ -92,7 +114,7 @@ password . NEXUS_DB_PASSWORD
 [ "$file" = compose.both.yaml ] && password ../Scry SCRY_DB_PASSWORD
 
 echo "Building and starting. The first build takes several minutes."
-if ! docker compose -f "$file" up --build --detach --wait --wait-timeout 600; then
+if ! $docker compose -f "$file" up --build --detach --wait --wait-timeout 600; then
   echo
   echo "It did not start. The lines above say why. If a port is taken, stop the development copy first."
   exit 1

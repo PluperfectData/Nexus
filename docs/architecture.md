@@ -23,7 +23,8 @@ records in memory, or piped into a destination.
 | `Server/src/Nexus.Schwab` | `SchwabSource`, `SchwabOrders`, and the order types |
 | `Server/src/Nexus.Service` | The Nexus service, which keeps connections and runs syncs into apps' push APIs |
 | `Client` | The service's pages, a React client: the installer, signing in, workspaces, and for admins, users and settings |
-| `install.ps1`, `start.ts` | The Windows installer, and the script its desktop shortcut runs: [Installing on Windows](installing.md) |
+| `install.ps1`, `install.sh` | The installers, for Windows, and for macOS and Linux: [Installing](installing.md) |
+| `start.ts`, `start.sh` | What starts the installed copy: the Windows shortcut runs `start.ts`, and `start.sh` runs it on macOS and Linux |
 | `Dockerfile`, `compose.yaml`, `compose.both.yaml`, `deploy/docker` | The Docker images and their services: [Running Nexus in Docker](docker.md) |
 | `Nexus Docker.cmd`, `nexus.sh` | The Docker launchers, for Windows, and for macOS and Linux |
 | `Server/tests/Nexus.Abstractions.Tests` | NUnit and Shouldly |

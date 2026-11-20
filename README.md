@@ -83,13 +83,13 @@ Each connector has its own page in [the documentation](docs/connectors/README.md
 ## Quick start
 
 Nexus installs three ways. Each runs it on one computer, then sets it up in the browser, and each can set up
-[Scry](https://github.com/PluperfectData/Scry) beside it. On Windows and in Docker, Nexus is at
+[Scry](https://github.com/PluperfectData/Scry) beside it. With the installer and in Docker, Nexus is at
 `https://localhost:6165`, served over HTTPS with a certificate the computer is asked to trust once. From the command
 line, it's at `http://localhost:6165`.
 
 | Way | For | Needs |
 |---|---|---|
-| [On Windows](#on-windows) | Using Nexus on a Windows computer | Windows 10 or 11 |
+| [With the installer](#with-the-installer) | Using Nexus on one computer | Windows 10 or 11, macOS, or Linux |
 | [In Docker](#in-docker) | Running Nexus in containers, on any computer | Docker Desktop, or Docker on Linux |
 | [From the command line](#from-the-command-line) | Working on Nexus's code | .NET 10, Node.js 24, MySQL 8.4, and Git |
 
@@ -99,24 +99,30 @@ Every way starts from the code at `Pluperfect.Data/Nexus` in a folder of your ch
 `git clone https://github.com/PluperfectData/Nexus.git Pluperfect.Data/Nexus`, or download the ZIP from GitHub
 and extract it there. Put Scry at `Pluperfect.Data/Scry` the same way to set them up together.
 
-### On Windows
+### With the installer
 
-Right-click `install.ps1` in the Nexus folder, and choose **Run with PowerShell**. It:
+In the Nexus folder:
 
-1. installs what's missing (.NET 10, Node.js, MySQL, and Git) through winget, and fetches the two libraries Nexus
-   builds against
+- **Windows 10 or 11:** right-click `install.ps1` and choose **Run with PowerShell**.
+- **macOS or Linux:** run `bash install.sh` in a terminal.
+
+It:
+
+1. installs what's missing (.NET 10, Node.js, MySQL, Git, and Mailpit), through winget on Windows, Homebrew on a Mac,
+   and downloads from their own sites on Linux, and fetches the two libraries Nexus builds against
 2. asks whether to install Scry too, when it's beside Nexus
-3. builds Nexus, and asks Windows once to trust the .NET development certificate, which serves Nexus's addresses,
-   including `https://127.0.0.1:6164`, where providers such as Schwab send people back
-4. puts a **Nexus** shortcut on the desktop, then starts Nexus with a database server of its own and opens
-   `https://localhost:6165`
+3. builds Nexus, and asks the computer once to trust the .NET development certificate, which serves Nexus's
+   addresses, including `https://127.0.0.1:6164`, where providers such as Schwab send people back
+4. adds a way to start Nexus again: a desktop shortcut on Windows, an app menu entry on Linux, and `sh start.sh` on
+   macOS and Linux
+5. starts Nexus with a database server of its own, and opens `https://localhost:6165`
 
 The installer page opens at Mail, since Nexus already knows its database and addresses. Then make yourself the
-admin. [Installing on Windows](docs/installing.md) has the detail.
+admin. [Installing](docs/installing.md) has the detail.
 
 ### In Docker
 
-Start Docker Desktop, or Docker on Linux. Then, in the Nexus folder:
+Start Docker Desktop. On Linux, `sh nexus.sh` installs Docker Engine when it's missing. Then, in the Nexus folder:
 
 - **Windows:** double-click `Nexus Docker.cmd`.
 - **macOS or Linux:** run `sh nexus.sh`.
@@ -251,7 +257,7 @@ packages. [Using the connectors in code](docs/connectors/usage.md) has more exam
 The [documentation](docs/README.md) covers each part in depth, with a contents page to find your way around. Good
 places to start:
 
-- [Installing on Windows](docs/installing.md) and [Running Nexus in Docker](docs/docker.md): the other two ways in
+- [Installing](docs/installing.md) and [Running Nexus in Docker](docs/docker.md): the other two ways in
 - [Running Nexus](docs/running.md): the installer, and setting up an instance from another machine
 - [Apps and connect pages](docs/apps-and-connect-pages.md): linking an app, and connecting a source from one
 - [Connectors](docs/connectors/README.md): what each connector reads or writes, and its settings

@@ -6,6 +6,10 @@ set -eu
 cd "$(dirname "$0")"
 export COMPOSE_IGNORE_ORPHANS=1
 
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed. On macOS, install Docker Desktop. On Linux, sh nexus.sh installs Docker Engine."
+  exit 1
+fi
 if ! docker info >/dev/null 2>&1; then
   echo "Docker is not running. Start Docker, then run this again."
   exit 1
