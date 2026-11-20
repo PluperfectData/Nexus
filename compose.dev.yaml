@@ -1,7 +1,9 @@
-# Nexus for working on its code, in Docker: the service under dotnet watch, the pages under Vite's dev server, MySQL,
-# and Mailpit, at the addresses development uses. "Nexus Dev.cmd" on Windows, or nexus-dev.sh on macOS and Linux,
-# starts it and watches the folders: each saved file is copied into its container, which reloads. These containers
-# share nothing with compose.yaml's. compose.dev.both.yaml runs them beside Scry's. By hand, every command takes
+# Nexus for working on its code, in Docker: the service under dotnet run, the pages under Vite's dev server, MySQL,
+# and Mailpit, at the ports development uses, with Caddy serving the pages, the service, and the sign-in callback over
+# HTTPS, as the release containers do. Each container copies in the code as saved every time it starts, so restarting
+# it runs the latest code. "Nexus Dev.cmd" on Windows, or nexus-dev.sh on macOS and Linux, builds and starts it; run it
+# again after changing a project or package file or this file. These containers share nothing with compose.yaml's.
+# compose.dev.both.yaml runs them beside Scry's. By hand, every command takes
 # --env-file .env.dev, where the launcher keeps the database's password.
 name: pluperfect-data-dev
 services:
@@ -52,84 +54,61 @@ services:
         condition: service_started
     environment:
       ConnectionStrings__Nexus: Server=nexus-db-dev;Port=3306;Database=nexus;User ID=nexus;Password=${NEXUS_DEV_DB_PASSWORD}
-      Nexus__ClientOrigin: http://localhost:6165
+      Nexus__ClientOrigin: https://localhost:6165
       Nexus__CallbackOrigin: https://127.0.0.1:6164
-      # The callback address reaches the service through nexus-callback-dev, whose forwarding headers say over what.
+      # Browsers reach the service only through nexus-caddy-dev, so its forwarding headers say who asked and over what.
       Nexus__Proxied: "true"
       Mail__MailpitUrl: http://nexus-mail-dev:8025
       Nexus__MailpitInbox: http://localhost:6168
-    ports:
-      - "127.0.0.1:6163:6163"
+    healthcheck:
+      # A connection alone, since the service logs every request.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6163"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      # The first start builds the service and makes the database's tables, which can take several minutes.
+      start_period: 10m
+    # Copies in the code as saved, keeping the container's own bin and obj and leaving out the data that running from
+    # the code keeps, then runs it once, so every start or restart runs the latest code.
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        shopt -s dotglob nullglob
+        for from in /source/Pluperfect.Data/Nexus/Server/src/* /source/Pluperfect.Jwt/src/Pluperfect.Jwt \
+            /source/Pluperfect.Mail/src/Pluperfect.Mail; do
+          to="/src$${from#/source}"
+          mkdir -p "$$to"
+          for entry in "$$to"/*; do case "$${entry##*/}" in bin|obj) ;; *) rm -rf "$$entry" ;; esac; done
+          for entry in "$$from"/*; do case "$${entry##*/}" in bin|obj|data|Data) ;; *) cp -a "$$entry" "$$to/" ;; esac; done
+        done
+        cd /src/Pluperfect.Data/Nexus/Server/src/Nexus.Service
+        exec dotnet run --no-launch-profile --disable-build-servers
     volumes:
       - nexus-data:/data
-    develop:
-      # Compose copies a folder whose entries changed whole, ignored files included, and a save through a temp file
-      # changes the folder it lands in. A watch root's own changes aren't reported, so each project is a root.
-      watch:
-        - action: sync
-          path: Server/src/Nexus.Service
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Service
-          # Matched with case, and Windows keeps a folder's first spelling.
-          ignore: [bin/, obj/, data/, Data/]
-        - action: sync
-          path: Server/src/Nexus.Abstractions
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Abstractions
-          ignore: &build [bin/, obj/]
-        - action: sync
-          path: Server/src/Nexus.Csv
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Csv
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.DuckDb
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.DuckDb
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.MySql
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.MySql
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.Postgres
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Postgres
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.Push
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Push
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.Schwab
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Schwab
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.Sql
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.Sql
-          ignore: *build
-        - action: sync
-          path: Server/src/Nexus.SqlServer
-          target: /src/Pluperfect.Data/Nexus/Server/src/Nexus.SqlServer
-          ignore: *build
-        - action: sync
-          path: ../../Pluperfect.Jwt/src/Pluperfect.Jwt
-          target: /src/Pluperfect.Jwt/src/Pluperfect.Jwt
-          ignore: *build
-        - action: sync
-          path: ../../Pluperfect.Mail/src/Pluperfect.Mail
-          target: /src/Pluperfect.Mail/src/Pluperfect.Mail
-          ignore: *build
-        - action: rebuild
-          path: Server/Directory.Packages.props
+      # Read only, by the command above.
+      - ./Server/src:/source/Pluperfect.Data/Nexus/Server/src:ro
+      - ../../Pluperfect.Jwt/src/Pluperfect.Jwt:/source/Pluperfect.Jwt/src/Pluperfect.Jwt:ro
+      - ../../Pluperfect.Mail/src/Pluperfect.Mail:/source/Pluperfect.Mail/src/Pluperfect.Mail:ro
 
-  nexus-callback-dev:
+  nexus-caddy-dev:
     image: caddy:2-alpine
-    container_name: nexus-callback-dev
+    container_name: nexus-caddy-dev
     depends_on:
-      - nexus-api-dev
+      nexus-api-dev:
+        condition: service_healthy
+      nexus-web-dev:
+        condition: service_healthy
     ports:
+      - "127.0.0.1:6163:6163"
       - "127.0.0.1:6164:6164"
+      - "127.0.0.1:6165:6165"
     volumes:
       - ./deploy/docker/Caddyfile.dev:/etc/caddy/Caddyfile:ro
       - nexus-caddy:/data
     healthcheck:
-      # Healthy once Caddy has made the authority its certificate comes from, which the launcher asks this computer
+      # Healthy once Caddy has made the authority its certificates come from, which the launcher asks this computer
       # to trust.
       test: ["CMD", "test", "-f", "/data/caddy/pki/authorities/local/root.crt"]
       interval: 2s
@@ -145,31 +124,26 @@ services:
         jwt: ../../Pluperfect.Jwt
         mail: ../../Pluperfect.Mail
     container_name: nexus-web-dev
-    ports:
-      - "127.0.0.1:6165:6165"
-    develop:
-      watch:
-        - action: sync
-          path: Client/src
-          target: /src/Pluperfect.Data/Nexus/Client/src
-        - action: sync
-          path: Client/public
-          target: /src/Pluperfect.Data/Nexus/Client/public
-        - action: sync
-          path: Client/index.html
-          target: /src/Pluperfect.Data/Nexus/Client/index.html
-        - action: sync
-          path: Client/vite.config.ts
-          target: /src/Pluperfect.Data/Nexus/Client/vite.config.ts
-        - action: sync
-          path: Client/.env.development
-          target: /src/Pluperfect.Data/Nexus/Client/.env.development
-        - action: rebuild
-          path: Client/package.json
-        - action: rebuild
-          path: Client/package-lock.json
-        - action: rebuild
-          path: ../../Pluperfect.Jwt/client/src
+    environment:
+      # Ahead of Client/.env.development, which names the service as it runs from the code.
+      VITE_API_URL: https://localhost:6163
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:6165/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 2m
+    # Copies in the code as saved, then serves it, so every start or restart runs the latest code; node_modules stays
+    # the image's own.
+    command:
+      - sh
+      - -c
+      - >-
+        for p in src public index.html vite.config.ts .env.development; do rm -rf "$$p" && cp -a "/source/Client/$$p" "$$p" || exit 1; done
+        && exec npm run dev -- --host 0.0.0.0
+    volumes:
+      # Read only, by the command above.
+      - ./Client:/source/Client:ro
 
 volumes:
   nexus-database:

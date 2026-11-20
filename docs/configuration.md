@@ -38,7 +38,7 @@ dotnet user-secrets set Nexus:Schwab:AppSecret "<app secret>" --project Server/s
 `Nexus:Proxied` (`Nexus__Proxied`), `false` unless set, says browsers reach the service only through a proxy, such
 as Caddy. When `true`, the service believes the proxy's `X-Forwarded-For` and `X-Forwarded-Proto`: who asked, for the
 install code's check, and whether it came over HTTPS, which the session and antiforgery cookies need outside
-Development. Docker's `compose.yaml` sets it. ⚠ Set it only where the service's own port can't be reached except
+Development. Docker's `compose.yaml` and the -dev containers' `compose.dev.yaml` set it. ⚠ Set it only where the service's own port can't be reached except
 through the proxy. Anyone who reaches it directly could otherwise claim any address, including this machine's.
 
 `add-admin` makes or restores an admin, prints a link that signs them in once, within an hour, and exits.

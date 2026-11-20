@@ -1,12 +1,45 @@
-# The -dev containers' address that providers such as Schwab send people back to after signing in, over HTTPS as from
-# the code. Caddy makes its certificate from its own authority, which the dev launcher asks this computer to trust.
+# The -dev containers over HTTPS: the pages and the service, as in the release containers, and the address providers
+# such as Schwab send people back to after signing in. Caddy makes each certificate from its own authority, which the
+# dev launcher asks this computer to trust.
 {
 	skip_install_trust
 	auto_https disable_redirects
 	# A browser sends no server name to an IP address, so this picks the certificate.
 	default_sni 127.0.0.1
+	# A plain http request on an https port, as Docker Desktop's port links send, is redirected to https.
+	servers {
+		listener_wrappers {
+			http_redirect
+			tls
+		}
+	}
 }
 
+https://localhost:6165 {
+	tls internal
+	reverse_proxy nexus-web-dev:6165
+}
+
+https://localhost:6163 {
+	tls internal
+	# Docker Desktop's link for this container opens its lowest port, this one, so a browser asking for the root goes on
+	# to the pages. The service has nothing there.
+	@page {
+		method GET
+		path /
+		header Accept *text/html*
+	}
+	redir @page https://localhost:6165/ 302
+	reverse_proxy nexus-api-dev:6163
+}
+
+# Docker Desktop's links name 127.0.0.1, where the pages' cookies and the service's allowed origin don't apply.
+https://127.0.0.1:6165, https://127.0.0.1:6163 {
+	tls internal
+	redir https://localhost:{http.request.port}{uri} 308
+}
+
+# Registered with providers as it is, so never redirected.
 https://127.0.0.1:6164 {
 	tls internal
 	reverse_proxy nexus-api-dev:6163

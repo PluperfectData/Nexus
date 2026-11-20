@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 
-# The -dev containers, for working on the code. compose.dev.yaml builds both targets and copies each saved file in, and
-# each reloads. The release images are the Dockerfile beside this one. The shared libraries come in as the jwt and
-# mail build contexts, placed as they sit on disk, since the project references count up to them.
+# The -dev containers, for working on the code. compose.dev.yaml builds both targets, and each container copies in the
+# code as saved whenever it starts. The release images are the Dockerfile beside this one. The shared libraries come
+# in as the jwt and mail build contexts, placed as they sit on disk, since the project references count up to them.
 
-# The service, under dotnet watch, in Development, as from the code.
+# The service, under dotnet run, in Development, as from the code.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
 WORKDIR /src
 COPY --from=jwt Directory.Build.props Directory.Packages.props global.json Pluperfect.Jwt/
@@ -18,11 +18,12 @@ WORKDIR /src/Pluperfect.Data/Nexus/Server/src/Nexus.Service
 RUN dotnet restore
 ENV ASPNETCORE_ENVIRONMENT=Development \
     ASPNETCORE_HTTP_PORTS=6163 \
-    Nexus__DataDirectory=/data \
-    DOTNET_WATCH_RESTART_ON_RUDE_EDIT=true
+    Nexus__DataDirectory=/data
+# The SDK image turns on polling for every file watcher, appsettings' reload included, and nothing here needs one.
+ENV DOTNET_USE_POLLING_FILE_WATCHER=false
 VOLUME /data
 EXPOSE 6163
-CMD ["dotnet", "watch", "run", "--no-launch-profile", "--non-interactive"]
+CMD ["dotnet", "run", "--no-launch-profile", "--disable-build-servers"]
 
 # The pages, under Vite's dev server.
 FROM node:24-trixie-slim AS web

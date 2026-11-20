@@ -1,6 +1,6 @@
 @echo off
-rem Builds and starts Nexus's -dev containers, opens Nexus in the browser, then watches the folders: each saved file
-rem is copied into its container, which reloads. Ctrl+C stops them. It can start Scry's beside them, linked.
+rem Builds and starts Nexus's -dev containers, which copy in this folder's code each time they start, and opens Nexus in
+rem the browser. It can start Scry's beside them, linked.
 setlocal
 cd /d "%~dp0"
 set COMPOSE_IGNORE_ORPHANS=1
@@ -29,28 +29,33 @@ if defined BOTH call :password ..\Scry SCRY_DEV_DB_PASSWORD
 echo Building and starting the -dev containers. The first build takes several minutes.
 %COMPOSE% up --build --detach --wait --wait-timeout 600
 if errorlevel 1 (
+  rem A container whose start failed on a taken port later starts with no network, so none is kept.
+  %COMPOSE% rm --force --volumes >nul 2>&1
   echo.
   echo They did not start. The lines above say why. They take the ports development uses, so stop any copy
   echo running from the code, or in Docker, first.
   goto :stopped
 )
 
-call :trust nexus-callback-dev Nexus
-call :wait http://localhost:6165
-start "" http://localhost:6165
-if defined BOTH start "" http://localhost:6160
+call :trust nexus-caddy-dev Nexus
+if defined BOTH call :trust scry-caddy-dev Scry
+call :install nexus-api-dev Nexus
+if defined BOTH call :install scry-api-dev Scry
+start "" https://localhost:6165
+if defined BOTH start "" https://localhost:6160
 echo.
-echo Nexus is at http://localhost:6165, and its service at http://localhost:6163 once it has built. Its Mailpit is
-echo at http://localhost:6168, and its MySQL answers on 127.0.0.1:6167 for MySQL Workbench, as nexus, with the
-echo password in Nexus's .env.dev. The install code shows below once the service has started.
+echo Nexus is at https://localhost:6165, and its service at https://localhost:6163. Its Mailpit is at
+echo http://localhost:6168, and its MySQL answers on 127.0.0.1:6167 for MySQL Workbench, as nexus, with the
+echo password in Nexus's .env.dev.
 if defined BOTH (
-  echo Scry is at http://localhost:6160, and its API at http://localhost:6161 once it has built. Its Mailpit is at
+  echo Scry is at https://localhost:6160, and its API at https://localhost:6161. Its Mailpit is at
   echo http://localhost:6162, and its MySQL answers on 127.0.0.1:6166 for MySQL Workbench, as scry, with the password
-  echo in Scry's .env.dev. The install code shows below once the API has started.
+  echo in Scry's .env.dev.
 )
-echo Saved changes reload on their own. Ctrl+C stops the -dev containers.
-echo.
-%COMPOSE% up --watch
+echo To see saved changes, restart a container, in Docker Desktop or with docker restart. After changing a project or
+echo package file or compose.dev.yaml, run this again. Docker Desktop shows the -dev containers under
+echo pluperfect-data-dev, and can stop them.
+pause
 exit /b 0
 
 :stopped
@@ -89,7 +94,8 @@ if errorlevel 1 echo %~2's certificate authority is not trusted, so the browser 
 del "%CERT%" >nul 2>&1
 exit /b 0
 
-rem Waits until the address answers, so the browser opens on a page.
-:wait
-powershell -NoProfile -Command "for ($i = 0; $i -lt 120; $i++) { try { $null = Invoke-WebRequest '%~1' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { Start-Sleep -Seconds 1 } }; exit 1"
+rem Shows the installer's address, with its install code, while the product is not set up yet.
+:install
+%COMPOSE% logs --no-log-prefix %~1 | findstr /c:"is not set up yet"
+if not errorlevel 1 echo Open the address above to set %~2 up, and enter that install code.
 exit /b 0

@@ -30,36 +30,54 @@ the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pl
 
 ## In Docker, with the -dev containers
 
-Instead of installing .NET, MySQL, and Mailpit, the code can run in containers that reload as it does from the code.
-With Docker running, double-click `Nexus Dev.cmd` on Windows, or run `sh nexus-dev.sh` on macOS or Linux. The
-launcher:
+Instead of installing .NET, MySQL, and Mailpit, the code can run in containers, with Caddy serving the pages and the
+service over HTTPS, as [Docker](docker.md) does. With Docker running,
+double-click `Nexus Dev.cmd` on Windows, or run `sh nexus-dev.sh` on macOS or Linux. The launcher:
 
 1. Fetches Pluperfect.Jwt and Pluperfect.Mail beside `Pluperfect.Data` with Git, when they aren't there.
 2. Asks whether to start Scry's -dev containers too, when Scry sits at `Pluperfect.Data/Scry`.
 3. Makes the database's password the first time, in `.env.dev` beside `compose.dev.yaml`, which git ignores.
-4. Builds the images from `Dockerfile.dev` and starts the containers. The first build takes several minutes.
-5. Asks the computer to trust the authority behind the callback address, the first time, as the
+4. Builds the images from `Dockerfile.dev`, starts the containers, and waits until the service and the pages answer.
+   The first build takes several minutes.
+5. Asks the computer to trust the authority Caddy made for the -dev addresses, the first time, as the
    [Docker launcher](docker.md#certificates) does.
-6. Opens `http://localhost:6165`, then watches the folders.
+6. Shows the installer's address with its install code, on a new database. A page that reaches the service through
+   Caddy needs the code.
+7. Opens `https://localhost:6165`, and ends.
 
 | Container | What |
 |---|---|
-| `nexus-api-dev` | The service, under `dotnet watch`, in Development, at `http://localhost:6163` |
-| `nexus-web-dev` | The pages, under Vite's dev server, at `http://localhost:6165` |
-| `nexus-callback-dev` | Caddy, serving `https://127.0.0.1:6164`, where providers such as Schwab send people back, to the service |
+| `nexus-caddy-dev` | Caddy, serving the pages at `https://localhost:6165`, the service at `https://localhost:6163`, and `https://127.0.0.1:6164`, where providers such as Schwab send people back, to the service |
+| `nexus-api-dev` | The service, under `dotnet run`, in Development |
+| `nexus-web-dev` | The pages, under Vite's dev server |
 | `nexus-db-dev` | MySQL, at 127.0.0.1, port 6167, for MySQL Workbench or the `mysql` client, as `nexus`, with the `NEXUS_DEV_DB_PASSWORD` in `.env.dev` |
 | `nexus-mail-dev` | Mailpit, at `http://localhost:6168` |
 
-A file saved under `Server/src`, `Client/src`, or `Client/public`, or under Pluperfect.Jwt's or Pluperfect.Mail's
-`src`, is copied into its container: the service takes the change, restarting when it must, and the page reloads. A
-change to `package.json`, `package-lock.json`, `Directory.Packages.props`, or Pluperfect.Jwt's client rebuilds its
-image. The window shows the containers' lines, including the installer's address with its install code on a new
-database, since requests reach the service through Docker. **Ctrl+C** stops them.
+Caddy makes the certificates from an authority of its own, which the launcher asks this computer to trust the first
+time: Windows asks once, macOS asks for your password, and Linux asks for it through `sudo`. If a browser that was
+already open still warns, close it fully and open it again. Plain http on any of the three ports goes on to https.
+Docker Desktop's links open `http://127.0.0.1:6163`, which Caddy sends on to `https://localhost:6165`, since the
+service has nothing at its root; `https://127.0.0.1` on 6163 and 6165 goes on to `https://localhost`, the only address
+where the pages' cookies and the service's allowed origin apply. `https://127.0.0.1:6164` is never sent on, since
+providers are registered to send people back there.
 
-Your own builds don't reach the containers; they build their own. They take development's ports, so run the code, the
+Each time a container starts, it copies in this folder's code as saved: every project under `Server/src`, with
+Pluperfect.Jwt's and Pluperfect.Mail's, for the service, and `Client/src`, `Client/public`, `index.html`,
+`vite.config.ts`, and `.env.development` for the pages. So to see a saved change, restart the container, with Docker
+Desktop's restart button or `docker restart nexus-api-dev` or `nexus-web-dev`; a restart takes 30 seconds to a minute,
+while the service builds. Nothing watches the folder, so nothing changes between restarts. Run the launcher again
+after changing a project file, `package.json`, `package-lock.json`, `Directory.Packages.props`, Pluperfect.Jwt's
+client, or `compose.dev.yaml`, such as an environment variable: it rebuilds the images and makes the containers
+again, where a restart keeps each container as it was made. Docker Desktop shows them under **pluperfect-data-dev**,
+and stops them.
+
+Your own builds don't reach the containers; they build their own, keeping `bin` and `obj` of their own across
+restarts, so Visual Studio's and theirs never mix. The folder's `data`, which running from the code keeps, is not
+copied in. They take development's ports, so run the code, the
 -dev containers, or [Docker](docker.md) one at a time. Their data is in the volumes `nexus-dev-database`,
-`nexus-dev-data`, `nexus-dev-mail`, and `nexus-dev-caddy`. Removing them in Docker Desktop starts the -dev containers
-over.
+`nexus-dev-data`, `nexus-dev-mail`, and `nexus-dev-caddy`, which holds Caddy's authority. Removing them in Docker
+Desktop starts the -dev containers over; without `nexus-dev-caddy`, Caddy makes a new authority, which the launcher
+asks to trust again.
 
 ## The installer
 
