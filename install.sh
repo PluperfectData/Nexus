@@ -46,7 +46,7 @@ apt_refresh() {
 packages() {
   if command -v apt-get >/dev/null 2>&1; then
     apt_refresh
-    sudo apt-get install -y $1
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y $1
   elif command -v dnf >/dev/null 2>&1; then
     sudo dnf install -y $2
   else
