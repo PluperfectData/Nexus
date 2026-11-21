@@ -1,6 +1,7 @@
 @echo off
 rem Builds Nexus's images and starts Nexus in Docker Desktop, then opens it in the browser. With Scry beside this
 rem folder, it can start Scry too, linked to Nexus.
+rem From a release's zip, which has no Dockerfile, it loads the images the zip carries, or downloads them.
 setlocal
 cd /d "%~dp0"
 set COMPOSE_IGNORE_ORPHANS=1
@@ -12,8 +13,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-call :fetch Pluperfect.Jwt ..\..\Pluperfect.Jwt https://github.com/mnwachukwu/Pluperfect.Jwt.git || goto :stopped
-call :fetch Pluperfect.Mail ..\..\Pluperfect.Mail https://github.com/mnwachukwu/Pluperfect.Mail.git || goto :stopped
+if exist Dockerfile (
+  call :fetch Pluperfect.Jwt ..\..\Pluperfect.Jwt https://github.com/mnwachukwu/Pluperfect.Jwt.git || goto :stopped
+  call :fetch Pluperfect.Mail ..\..\Pluperfect.Mail https://github.com/mnwachukwu/Pluperfect.Mail.git || goto :stopped
+)
 
 set FILE=compose.yaml
 if exist "..\Scry\compose.yaml" (
@@ -24,8 +27,14 @@ if exist "..\Scry\compose.yaml" (
 call :password . NEXUS_DB_PASSWORD
 if "%FILE%"=="compose.both.yaml" call :password ..\Scry SCRY_DB_PASSWORD
 
-echo Building and starting. The first build takes several minutes.
-docker compose -f %FILE% up --build --detach --wait --wait-timeout 600
+set BUILD=
+if exist Dockerfile (
+  echo Building and starting. The first build takes several minutes.
+  set BUILD=--build
+) else (
+  call :images || goto :stopped
+)
+docker compose -f %FILE% up %BUILD% --detach --wait --wait-timeout 600
 if errorlevel 1 (
   echo.
   echo It did not start. The lines above say why. If a port is taken, stop the development copy first.
@@ -53,6 +62,45 @@ exit /b 0
 :stopped
 pause
 exit /b 1
+
+rem A release's zip carries each product's x86-64 images; anywhere else, or without them, they are downloaded.
+:images
+call :missing
+if not defined MISSING (
+  echo Starting.
+  exit /b 0
+)
+set ARCH=
+for /f "delims=" %%a in ('docker info --format "{{.Architecture}}"') do set ARCH=%%a
+if /i "%ARCH%"=="x86_64" (
+  if exist nexus-images.tar (
+    echo Loading Nexus from nexus-images.tar, then starting. This takes a few minutes the first time.
+    docker load -i nexus-images.tar || exit /b 1
+  )
+  if "%FILE%"=="compose.both.yaml" if exist ..\Scry\scry-images.tar (
+    echo Loading Scry from ..\Scry\scry-images.tar.
+    docker load -i ..\Scry\scry-images.tar || exit /b 1
+  )
+)
+call :missing
+if not defined MISSING exit /b 0
+echo Downloading and starting. The first download takes several minutes.
+docker compose -f %FILE% pull
+if errorlevel 1 (
+  echo.
+  echo It did not download. If the lines above say denied or unauthorized, sign in once with
+  echo docker login ghcr.io, as docs/docker.md shows, then run this again.
+  exit /b 1
+)
+exit /b 0
+
+rem Sets MISSING when an image this stack runs from the registry is not loaded.
+:missing
+set MISSING=
+for /f "delims=" %%i in ('docker compose -f %FILE% config --images ^| findstr /b /c:"ghcr.io/"') do (
+  docker image inspect %%i >nul 2>&1 || set MISSING=1
+)
+exit /b 0
 
 rem Clones a checkout the build needs, when it is missing.
 :fetch

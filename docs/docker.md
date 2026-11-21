@@ -95,6 +95,32 @@ they are plain HTTP. Link them from a Scry workspace's Settings page, as on any 
 
 Each product keeps its own volumes, so its data is the same whether it runs alone or with the other.
 
+## From a release's zip
+
+Each version is a release on the repository's [Releases page](https://github.com/PluperfectData/Nexus/releases), with
+two zips under **Assets**. Neither needs the code or GitHub's registry:
+
+| Zip | What it runs |
+|---|---|
+| `nexus-<version>.zip` | Nexus alone. It unzips to a folder named `Nexus`. |
+| `nexus-<version>-with-scry-<version>.zip` | Nexus with Scry's latest release beside it, linked. It unzips to `Pluperfect.Data`, holding `Nexus` and `Scry`. |
+
+Each product's folder holds its compose files, its launchers, and `nexus-images.tar` or `scry-images.tar`: its images,
+for x86-64 computers, which are Windows and Linux PCs and Intel Macs.
+
+1. Unzip it into a folder of its own.
+2. In the `Nexus` folder, double-click `Nexus Docker.cmd` on Windows, or run `sh nexus.sh` on macOS or Linux. With Scry
+   beside it, answer Y to start Scry too.
+
+The launcher loads the images from the zip the first time, downloads MySQL and Mailpit from Docker Hub, and starts them
+as [Starting it](#starting-it) describes, at `https://localhost:6165`. Unzipping `nexus-<version>.zip` and Scry's own
+zip into one folder puts the two folders side by side, as the bundle does, so the launcher offers Scry there too.
+
+On an Apple Silicon Mac or another ARM computer, the zip's images do not run, so the launcher downloads them from
+GitHub's registry instead. Sign in to it once first: make a personal access token (classic) with `read:packages` at
+https://github.com/settings/tokens/new?scopes=read:packages, then run `docker login ghcr.io` with your GitHub username
+and the token as the password.
+
 ## Running a published release
 
 The [Docker workflow](../.github/workflows/docker.yml) builds both images for amd64 and arm64 on every `v` tag and

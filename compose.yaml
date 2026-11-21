@@ -2,6 +2,7 @@
 # "Nexus Docker.cmd" on Windows or nexus.sh on macOS and Linux builds and starts it. compose.both.yaml runs it
 # beside Scry. Setting NEXUS_VERSION to a release, such as 0.2.0, and running "docker compose pull" uses that
 # release's published images instead of building.
+# A release's zip holds this file without its builds, pinned to that release's version.
 name: pluperfect-data
 services:
   nexus-db:

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds Nexus's images and starts Nexus in Docker, then opens it in the browser, installing Docker Engine first on
 # Linux if it is missing. With Scry beside this folder, it can start Scry too, linked to Nexus.
+# From a release's zip, which has no Dockerfile, it loads the images the zip carries, or downloads them.
 # Run it with: sh nexus.sh
 set -eu
 cd "$(dirname "$0")"
@@ -68,6 +69,39 @@ password() {
   printf '%s=%s\n' "$2" "$(head -c 24 /dev/urandom | base64 | tr -d '+/=\n')" > "$1/.env"
 }
 
+# Whether an image this stack runs from the registry is not loaded.
+missing() {
+  for image in $($docker compose -f "$file" config --images | grep '^ghcr\.io/'); do
+    $docker image inspect "$image" >/dev/null 2>&1 || return 0
+  done
+  return 1
+}
+
+# A release's zip carries each product's x86-64 images; anywhere else, or without them, they are downloaded.
+images() {
+  if ! missing; then
+    echo "Starting."
+    return 0
+  fi
+  if [ "$($docker info --format '{{.Architecture}}')" = x86_64 ]; then
+    if [ -f nexus-images.tar ]; then
+      echo "Loading Nexus from nexus-images.tar, then starting. This takes a few minutes the first time."
+      $docker load -i nexus-images.tar
+    fi
+    if [ "$file" = compose.both.yaml ] && [ -f ../Scry/scry-images.tar ]; then
+      echo "Loading Scry from ../Scry/scry-images.tar."
+      $docker load -i ../Scry/scry-images.tar
+    fi
+    missing || return 0
+  fi
+  echo "Downloading and starting. The first download takes several minutes."
+  if ! $docker compose -f "$file" pull; then
+    echo "It did not download. If the lines above say denied or unauthorized, sign in once with"
+    echo "$docker login ghcr.io, as docs/docker.md shows, then run this again."
+    exit 1
+  fi
+}
+
 # Shows the installer's address, with its install code, while the product is not set up yet.
 install_code() {
   if $docker compose -f "$file" logs --no-log-prefix "$1" | grep "is not set up yet"; then
@@ -121,8 +155,10 @@ open_page() {
   if command -v open >/dev/null 2>&1; then open "$1"; elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1"; fi
 }
 
-fetch Pluperfect.Jwt ../../Pluperfect.Jwt https://github.com/mnwachukwu/Pluperfect.Jwt.git
-fetch Pluperfect.Mail ../../Pluperfect.Mail https://github.com/mnwachukwu/Pluperfect.Mail.git
+if [ -f Dockerfile ]; then
+  fetch Pluperfect.Jwt ../../Pluperfect.Jwt https://github.com/mnwachukwu/Pluperfect.Jwt.git
+  fetch Pluperfect.Mail ../../Pluperfect.Mail https://github.com/mnwachukwu/Pluperfect.Mail.git
+fi
 
 file=compose.yaml
 if [ -f ../Scry/compose.yaml ]; then
@@ -134,8 +170,14 @@ fi
 password . NEXUS_DB_PASSWORD
 [ "$file" = compose.both.yaml ] && password ../Scry SCRY_DB_PASSWORD
 
-echo "Building and starting. The first build takes several minutes."
-if ! $docker compose -f "$file" up --build --detach --wait --wait-timeout 600; then
+build=
+if [ -f Dockerfile ]; then
+  echo "Building and starting. The first build takes several minutes."
+  build=--build
+else
+  images
+fi
+if ! $docker compose -f "$file" up $build --detach --wait --wait-timeout 600; then
   echo
   echo "It did not start. The lines above say why. If a port is taken, stop the development copy first."
   exit 1

@@ -3,6 +3,8 @@ name: Docker
 # Builds the service and pages images for amd64 and arm64 and pushes them to GitHub's container registry: on a version
 # tag such as v0.2.0, or by hand from the Actions tab, which tags them with the branch's name. The build contexts reach
 # the shared libraries beside Pluperfect.Data, so this repository is checked out at Pluperfect.Data/Nexus, as in ci.yml.
+# A version tag also makes a release with two zips, each runnable with neither the code nor the registry: Nexus
+# alone, and Nexus with Scry's latest release beside it.
 on:
   push:
     tags: ['v*']
@@ -69,3 +71,54 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nexus-${{ matrix.target }}
           cache-to: type=gha,mode=max,scope=nexus-${{ matrix.target }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Nexus's folder: its compose files without their builds, pinned to this version, its launchers, and its x86-64
+      # images, which the launchers load in place of downloading them. The second zip puts Scry's latest release
+      # beside it, as the code has the two.
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p alone/Nexus
+          awk '/^    build:/ { skip = 1; next } skip && /^      / { next } { skip = 0; print }' compose.yaml \
+            | sed "s|:\${NEXUS_VERSION:-local}|:\${NEXUS_VERSION:-$version}|" > alone/Nexus/compose.yaml
+          cp compose.both.yaml "Nexus Docker.cmd" nexus.sh alone/Nexus/
+          if grep -q 'build:' alone/Nexus/compose.yaml; then echo "compose.yaml still builds"; exit 1; fi
+          images=$(NEXUS_DB_PASSWORD=check docker compose -f alone/Nexus/compose.yaml config --images | grep '^ghcr\.io/')
+          if [ "$(echo "$images" | grep -c ":$version$")" -ne 2 ]; then echo "compose.yaml names $images"; exit 1; fi
+          for image in $images; do docker pull --platform linux/amd64 "$image"; done
+          docker save --platform linux/amd64 -o alone/Nexus/nexus-images.tar $images
+          (cd alone && python3 -m zipfile -c "../nexus-$version.zip" Nexus)
+          zips="nexus-$version.zip"
+          notes="- **nexus-$version.zip**: Nexus alone."
+          latest=$(gh release view --repo PluperfectData/Scry --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$latest" ]; then
+            gh release download "$latest" --repo PluperfectData/Scry --pattern "scry-${latest#v}.zip" --dir scry
+            mkdir -p bundle/Pluperfect.Data
+            cp -r alone/Nexus bundle/Pluperfect.Data/
+            python3 -m zipfile -e "scry/scry-${latest#v}.zip" bundle/Pluperfect.Data
+            bundled="nexus-$version-with-scry-${latest#v}.zip"
+            (cd bundle && python3 -m zipfile -c "../$bundled" Pluperfect.Data)
+            zips="$zips $bundled"
+            notes="$notes"$'\n'"- **$bundled**: Nexus with Scry ${latest#v} beside it. Run Nexus's launcher in its Nexus folder, and answer Y to start Scry too, linked."
+          else
+            echo "::warning::Scry has no release yet, so there is no zip of Nexus with Scry."
+          fi
+          gh release create "$GITHUB_REF_NAME" $zips --title "Nexus $version" --notes "$notes" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

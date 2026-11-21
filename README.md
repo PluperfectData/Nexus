@@ -132,6 +132,10 @@ it builds and starts Nexus with MySQL beside it, and asks the computer once to t
 Nexus's addresses. It prints the installer's address with its install code, and opens `https://localhost:6165`. The
 first build takes several minutes. [Running Nexus in Docker](docs/docker.md) has the detail.
 
+Without the code, download a version's zip from the [Releases page](https://github.com/PluperfectData/Nexus/releases):
+`nexus-<version>.zip` for Nexus alone, or the one named `with-scry` for both. Its launcher loads Nexus from the zip, so
+nothing else is needed but Docker. [From a release's zip](docs/docker.md#from-a-releases-zip) has the detail.
+
 ### From the command line
 
 You'll run the Nexus service and its web client from their code, then set Nexus up in the browser.
