@@ -6,15 +6,33 @@ set -eu
 cd "$(dirname "$0")"
 export COMPOSE_IGNORE_ORPHANS=1
 
+# Root runs these commands itself, and anyone else through sudo.
+no_sudo() {
+  echo "This step needs root, and this computer has no sudo. Run this again as root."
+  return 1
+}
+sudo=
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1; then sudo=sudo; else sudo=no_sudo; fi
+fi
+
 if ! command -v docker >/dev/null 2>&1; then
   if [ "$(uname -s)" = Darwin ]; then
     echo "Docker is not installed. Install Docker Desktop, start it, then run this again."
     exit 1
   fi
-  echo "Docker is not installed. Installing Docker Engine with Docker's own script; it asks for your password."
+  if [ "$sudo" = no_sudo ]; then no_sudo; fi
+  echo "Docker is not installed. Installing Docker Engine with Docker's own script${sudo:+; sudo asks for your password}."
   script=$(mktemp)
-  if command -v curl >/dev/null 2>&1; then curl -fsSL https://get.docker.com -o "$script"; else wget -qO "$script" https://get.docker.com; fi
-  sudo sh "$script"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com -o "$script"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$script" https://get.docker.com
+  else
+    echo "Installing Docker needs curl or wget, and this computer has neither. Install curl, then run this again."
+    exit 1
+  fi
+  $sudo sh "$script"
   rm -f "$script"
 fi
 
@@ -24,8 +42,9 @@ if ! docker info >/dev/null 2>&1; then
     echo "Docker is not running. Start Docker Desktop, then run this again."
     exit 1
   fi
-  docker="sudo docker"
-  $docker info >/dev/null 2>&1 || sudo systemctl start docker
+  docker="${sudo:+$sudo }docker"
+  # Enabled as well as started, so Docker starts it again after the computer restarts.
+  $docker info >/dev/null 2>&1 || $sudo systemctl enable --now docker
 fi
 if ! $docker compose version >/dev/null 2>&1; then
   echo "Docker Compose is missing. Install the docker-compose-plugin package, then run this again."
@@ -83,8 +102,10 @@ trust() {
         update=update-ca-trust
       fi
       if [ -n "$target" ] && ! cmp -s "$cert" "$target"; then
-        echo "sudo asks for your password to trust $2 in Docker, so this computer trusts its addresses."
-        { sudo install -m 644 "$cert" "$target" && sudo "$update"; } ||
+        if [ "$sudo" = sudo ]; then
+          echo "sudo asks for your password to trust $2 in Docker, so this computer trusts its addresses."
+        fi
+        { $sudo install -m 644 "$cert" "$target" && $sudo "$update"; } ||
           echo "$2's certificate authority is not trusted, so the browser warns about its addresses."
       fi
       # Chrome on Linux reads its own store rather than the system's.

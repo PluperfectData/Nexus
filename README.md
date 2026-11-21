@@ -89,8 +89,8 @@ line, it's at `http://localhost:6165`.
 
 | Way | For | Needs |
 |---|---|---|
-| [With the installer](#with-the-installer) | Using Nexus on one computer | Windows 10 or 11, macOS, or Linux |
-| [In Docker](#in-docker) | Running Nexus in containers, on any computer | Docker Desktop, or Docker on Linux |
+| [With the installer](#with-the-installer) | Installing Nexus and the programs it needs onto one computer | Windows 10 or 11, macOS, or Linux |
+| [In Docker](#in-docker) | Running Nexus in containers, on any computer, with no program installed but Docker | Docker Desktop, or Docker on Linux |
 | [From the command line](#from-the-command-line) | Working on Nexus's code | .NET 10, Node.js 24, MySQL 8.4, and Git |
 
 All three use the same ports, so run one at a time.
