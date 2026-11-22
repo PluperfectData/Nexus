@@ -277,8 +277,8 @@ Contributions are welcome. In short:
 4. Pull requests are squash-merged, so each becomes one commit on `main`.
 
 To run the code while you work on it, start it [from the command line](docs/running.md), or in Docker, in the
--dev containers that `Nexus Dev.cmd` or `nexus-dev.sh` starts, which copy in the code as saved each time they start:
-[In Docker, with the -dev containers](docs/running.md#in-docker-with-the--dev-containers).
+dev containers that `Nexus Dev.cmd` or `nexus-dev.sh` starts, which copy in the code as saved each time they start:
+[In Docker, with the dev containers](docs/running.md#in-docker-with-the-dev-containers).
 
 Contributing comes with terms: by contributing, you give the maintainer permission to relicense your contribution.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you start.

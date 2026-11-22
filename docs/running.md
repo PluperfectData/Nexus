@@ -28,18 +28,18 @@ The client takes `@pluperfect/jwt` from a sibling checkout of `Pluperfect.Jwt` b
 the service takes `Pluperfect.Jwt` and `Pluperfect.Mail` the same way. Build `Pluperfect.Jwt/client` once with
 `npm run build` before installing the client.
 
-## In Docker, with the -dev containers
+## In Docker, with the dev containers
 
 Instead of installing .NET, MySQL, and Mailpit, the code can run in containers, with Caddy serving the pages and the
 service over HTTPS, as [Docker](docker.md) does. With Docker running,
 double-click `Nexus Dev.cmd` on Windows, or run `sh nexus-dev.sh` on macOS or Linux. The launcher:
 
 1. Fetches Pluperfect.Jwt and Pluperfect.Mail beside `Pluperfect.Data` with Git, when they aren't there.
-2. Asks whether to start Scry's -dev containers too, when Scry sits at `Pluperfect.Data/Scry`.
+2. Asks whether to start Scry's dev containers too, when Scry sits at `Pluperfect.Data/Scry`.
 3. Makes the database's password the first time, in `.env.dev` beside `compose.dev.yaml`, which git ignores.
 4. Builds the images from `Dockerfile.dev`, starts the containers, and waits until the service and the pages answer.
    The first build takes several minutes.
-5. Asks the computer to trust the authority Caddy made for the -dev addresses, the first time, as the
+5. Asks the computer to trust the authority Caddy made for the dev addresses, the first time, as the
    [Docker launcher](docker.md#certificates) does.
 6. Shows the installer's address with its install code, on a new database. A page that reaches the service through
    Caddy needs the code.
@@ -74,9 +74,9 @@ and stops them.
 Your own builds don't reach the containers; they build their own, keeping `bin` and `obj` of their own across
 restarts, so Visual Studio's and theirs never mix. The folder's `data`, which running from the code keeps, is not
 copied in. They take development's ports, so run the code, the
--dev containers, or [Docker](docker.md) one at a time. Their data is in the volumes `nexus-dev-database`,
+dev containers, or [Docker](docker.md) one at a time. Their data is in the volumes `nexus-dev-database`,
 `nexus-dev-data`, `nexus-dev-mail`, and `nexus-dev-caddy`, which holds Caddy's authority. Removing them in Docker
-Desktop starts the -dev containers over; without `nexus-dev-caddy`, Caddy makes a new authority, which the launcher
+Desktop starts the dev containers over; without `nexus-dev-caddy`, Caddy makes a new authority, which the launcher
 asks to trust again.
 
 ## The installer

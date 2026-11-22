@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds and starts Nexus's -dev containers, which copy in this folder's code each time they start, and opens Nexus in
+# Builds and starts Nexus's dev containers, which copy in this folder's code each time they start, and opens Nexus in
 # the browser. It can start Scry's beside them, linked.
 # Run it with: sh nexus-dev.sh
 set -eu
@@ -26,7 +26,7 @@ fetch() {
   git clone "$3" "$2"
 }
 
-# A -dev database's password, made the first time and kept in .env.dev beside that product's compose.dev.yaml,
+# A dev database's password, made the first time and kept in .env.dev beside that product's compose.dev.yaml,
 # apart from the release containers' .env.
 password() {
   [ -f "$1/.env.dev" ] && return 0
@@ -91,7 +91,7 @@ fetch Pluperfect.Mail ../../Pluperfect.Mail https://github.com/mnwachukwu/Pluper
 
 both=
 if [ -f ../Scry/compose.dev.yaml ]; then
-  printf 'Scry is beside Nexus. Start Scry'"'"'s -dev containers too, linked to Nexus? [y/N] '
+  printf 'Scry is beside Nexus. Start Scry'"'"'s dev containers too, linked to Nexus? [y/N] '
   read -r answer
   case "$answer" in [Yy]*) both=1 ;; esac
 fi
@@ -102,7 +102,7 @@ compose() {
 password . NEXUS_DEV_DB_PASSWORD
 [ -n "$both" ] && password ../Scry SCRY_DEV_DB_PASSWORD
 
-echo "Building and starting the -dev containers. The first build takes several minutes."
+echo "Building and starting the dev containers. The first build takes several minutes."
 if ! compose up --build --detach --wait --wait-timeout 600; then
   # A container whose start failed on a taken port later starts with no network, so none is kept.
   compose rm --force --volumes >/dev/null 2>&1 || true
@@ -130,7 +130,7 @@ fi
 echo "To see saved changes, restart a container, with docker restart or Docker Desktop. After changing a project or"
 echo "package file or compose.dev.yaml, run this again."
 if [ -n "$both" ]; then
-  echo "docker compose -f compose.dev.both.yaml stop stops the -dev containers."
+  echo "docker compose -f compose.dev.both.yaml stop stops the dev containers."
 else
-  echo "docker compose -f compose.dev.yaml --env-file .env.dev stop stops the -dev containers."
+  echo "docker compose -f compose.dev.yaml --env-file .env.dev stop stops the dev containers."
 fi

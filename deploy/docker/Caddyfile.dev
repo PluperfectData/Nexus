@@ -1,4 +1,4 @@
-# The -dev containers over HTTPS: the pages and the service, as in the release containers, and the address providers
+# The dev containers over HTTPS: the pages and the service, as in the release containers, and the address providers
 # such as Schwab send people back to after signing in. Caddy makes each certificate from its own authority, which the
 # dev launcher asks this computer to trust.
 {

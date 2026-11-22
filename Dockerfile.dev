@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# The -dev containers, for working on the code. compose.dev.yaml builds both targets, and each container copies in the
+# The dev containers, for working on the code. compose.dev.yaml builds both targets, and each container copies in the
 # code as saved whenever it starts. The release images are the Dockerfile beside this one. The shared libraries come
 # in as the jwt and mail build contexts, placed as they sit on disk, since the project references count up to them.
 

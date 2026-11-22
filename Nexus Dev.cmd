@@ -1,5 +1,5 @@
 @echo off
-rem Builds and starts Nexus's -dev containers, which copy in this folder's code each time they start, and opens Nexus in
+rem Builds and starts Nexus's dev containers, which copy in this folder's code each time they start, and opens Nexus in
 rem the browser. It can start Scry's beside them, linked.
 setlocal
 cd /d "%~dp0"
@@ -17,7 +17,7 @@ call :fetch Pluperfect.Mail ..\..\Pluperfect.Mail https://github.com/mnwachukwu/
 
 set BOTH=
 if exist "..\Scry\compose.dev.yaml" (
-  choice /c YN /m "Scry is beside Nexus. Start Scry's -dev containers too, linked to Nexus"
+  choice /c YN /m "Scry is beside Nexus. Start Scry's dev containers too, linked to Nexus"
   if not errorlevel 2 set BOTH=1
 )
 set COMPOSE=docker compose -f compose.dev.yaml --env-file .env.dev
@@ -26,7 +26,7 @@ if defined BOTH set COMPOSE=docker compose -f compose.dev.both.yaml
 call :password . NEXUS_DEV_DB_PASSWORD
 if defined BOTH call :password ..\Scry SCRY_DEV_DB_PASSWORD
 
-echo Building and starting the -dev containers. The first build takes several minutes.
+echo Building and starting the dev containers. The first build takes several minutes.
 %COMPOSE% up --build --detach --wait --wait-timeout 600
 if errorlevel 1 (
   rem A container whose start failed on a taken port later starts with no network, so none is kept.
@@ -53,7 +53,7 @@ if defined BOTH (
   echo in Scry's .env.dev.
 )
 echo To see saved changes, restart a container, in Docker Desktop or with docker restart. After changing a project or
-echo package file or compose.dev.yaml, run this again. Docker Desktop shows the -dev containers under
+echo package file or compose.dev.yaml, run this again. Docker Desktop shows the dev containers under
 echo pluperfect-data-dev, and can stop them.
 pause
 exit /b 0
@@ -74,7 +74,7 @@ echo Fetching %~1 into %~2.
 git clone %~3 "%~2"
 exit /b %errorlevel%
 
-rem A -dev database's password, made the first time and kept in .env.dev beside that product's compose.dev.yaml,
+rem A dev database's password, made the first time and kept in .env.dev beside that product's compose.dev.yaml,
 rem apart from the release containers' .env.
 :password
 if exist "%~1\.env.dev" exit /b 0
