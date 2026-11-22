@@ -17,9 +17,10 @@ services:
       - nexus-database:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
-      interval: 5s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       # MySQL's first start makes its database files, which can take several minutes.
       start_period: 10m
 

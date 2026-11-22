@@ -22,9 +22,10 @@ services:
       - nexus-database:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
-      interval: 5s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       # MySQL's first start makes its database files, which can take several minutes.
       start_period: 10m
 
@@ -63,9 +64,10 @@ services:
     healthcheck:
       # A connection alone, since the service logs every request.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6163"]
-      interval: 5s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       # The first start builds the service and makes the database's tables, which can take several minutes.
       start_period: 10m
     # Copies in the code as saved, keeping the container's own bin and obj and leaving out the data that running from
@@ -111,9 +113,11 @@ services:
       # Healthy once Caddy has made the authority its certificates come from, which the launcher asks this computer
       # to trust.
       test: ["CMD", "test", "-f", "/data/caddy/pki/authorities/local/root.crt"]
-      interval: 2s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       start_period: 1m
+      retries: 3
 
   nexus-web-dev:
     build:
@@ -129,9 +133,10 @@ services:
       VITE_API_URL: https://localhost:6163
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:6165/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
-      interval: 5s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       start_period: 2m
     # Copies in the code as saved, then serves it, so every start or restart runs the latest code; node_modules stays
     # the image's own.
